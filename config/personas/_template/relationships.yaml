@@ -1,0 +1,23 @@
+# Relationships Template
+
+# 사전 정의된 관계
+predefined:
+  # 친한 사람
+  - handle: "@friend_example"
+    name: "친구 이름"
+    relationship: "친구"
+    tone: "친근하게"
+    priority: "high"
+
+  # 멘토
+  - handle: "@mentor_example"
+    name: "멘토 이름"
+    relationship: "멘토"
+    tone: "존경하며"
+    priority: "high"
+
+# 동적 관계 설정
+dynamic:
+  default_tone: "친절하게"
+  trust_growth_rate: 0.1
+  decay_rate: 0.05

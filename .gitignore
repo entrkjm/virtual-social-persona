@@ -1,0 +1,35 @@
+.venv/
+.env
+__pycache__/
+*.pyc
+
+# Data files (로컬 데이터 / local data)
+data/
+*.db
+agent_memory.json
+agent_memory.json.backup.*
+
+# Chroma vector store
+chroma/
+
+# Chrome automation data
+chrome_data/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+gcp-key.json
+
+# Runtime logs
+posted_content.txt
+
+# Temp files
+task_plan.md
+notes.md
+
+# Archive (old code)
+_archive/

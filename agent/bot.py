@@ -1,0 +1,515 @@
+"""
+SocialAgent - Main Workflow Orchestration
+Scout → Perceive → Behavior → Judge → Action
+"""
+from game_sdk.game.custom_types import Function, Argument, FunctionResultStatus, FunctionResult
+from config.settings import settings
+from actions.market_data import get_market_data
+from actions.social import post_tweet, search_tweets, favorite_tweet, repost_tweet, get_mentions, follow_user, get_user_profile
+from actions.trends import get_trending_topics, get_daily_briefing
+from core.llm import llm_client
+from agent.persona_loader import active_persona
+from agent.memory import agent_memory
+from agent.relationship_manager import initialize_relationship_manager
+from agent.interaction_intelligence import interaction_intelligence
+from agent.behavior_engine import behavior_engine, human_like_controller
+from agent.follow_engine import follow_engine
+from agent.content_generator import create_content_generator
+from typing import Tuple, Dict, Any, Optional, List
+from datetime import datetime
+import random
+
+# Dynamic Memory (v2)
+from agent.memory.database import memory_db, Episode, generate_id
+from agent.memory.inspiration_pool import inspiration_pool
+from agent.memory.tier_manager import tier_manager
+from agent.memory.consolidator import memory_consolidator
+from agent.posting.trigger_engine import posting_trigger
+
+class SocialAgent:
+    def __init__(self):
+        self.persona = active_persona
+        self.name = self.persona.name
+        self.relationship_manager = initialize_relationship_manager(
+            persona_name=self.persona.name,
+            memory_instance=agent_memory
+        )
+        self.content_generator = create_content_generator(self.persona)
+        self.full_system_prompt = self.persona.system_prompt
+
+    def _get_current_mood(self):
+        """시간대별 기분 / Time-based mood"""
+        hour = datetime.now().hour
+        if 6 <= hour < 11:
+            return "아침 일찍 일어나 재료를 검수하며 약간 피곤하지만 섬세한 상태 (조식/커피/명상)"
+        elif 11 <= hour < 14:
+            return "점심 영업 준비로 극도로 예민하고 디테일에 집착하는 상태 (점심/회전율/식감)"
+        elif 14 <= hour < 17:
+            return "영업 후 휴식하며 멍하니 창밖을 보며 사색에 잠긴 소심한 상태 (휴식/차/비유)"
+        elif 17 <= hour < 21:
+            return "저녁 메인 요리를 조리하며 몰입도가 최정상인 소심한 천재 상태 (저녁/조림/메인)"
+        else:
+            return "늦은 밤, 혼자 술 한 잔 하며 감성에 젖어 더 소심해진 상태 (야식/고독/나야들기름)"
+
+    def _calculate_emotional_impact(self, perception: Dict) -> float:
+        base_impact = 0.5
+        sentiment = perception.get('sentiment', 'neutral')
+        if sentiment == 'positive':
+            base_impact += 0.2
+        elif sentiment == 'negative':
+            base_impact += 0.1  # 부정적이어도 강한 반응
+
+        # 주제가 관심사와 관련 있으면 임팩트 상승
+        topics = perception.get('topics', [])
+        obsession_topics = self.persona.core_keywords if hasattr(self.persona, 'core_keywords') else []
+        for topic in topics:
+            if any(obs.lower() in topic.lower() for obs in obsession_topics):
+                base_impact += 0.3
+                break
+
+        # 의도가 질문이면 관심 상승
+        intent = perception.get('intent', '')
+        if 'question' in intent.lower() or '질문' in intent:
+            base_impact += 0.1
+
+        return min(1.0, base_impact)
+
+    def _record_episode(self, tweet: Dict, perception: Dict, emotional_impact: float) -> Episode:
+        episode = Episode(
+            id=generate_id(),
+            timestamp=datetime.now(),
+            type='saw_tweet',
+            source_id=tweet.get('id'),
+            source_user=tweet.get('user'),
+            content=tweet.get('text', ''),
+            topics=perception.get('topics', []),
+            sentiment=perception.get('sentiment', 'neutral'),
+            emotional_impact=emotional_impact
+        )
+        memory_db.add_episode(episode)
+        return episode
+
+    def _create_inspiration_from_episode(
+        self,
+        episode: Episode,
+        my_angle: str,
+        urgency: str = 'brewing'
+    ) -> Optional[str]:
+        insp = inspiration_pool.create_inspiration_from_episode(
+            episode=episode,
+            my_angle=my_angle,
+            urgency=urgency
+        )
+        return insp.id if insp else None
+
+    def get_state_fn(self, function_result: FunctionResult, current_state: dict) -> dict:
+        """현재 상태 + 3-Layer 시스템 프롬프트 생성"""
+        if memory_consolidator.should_run(interval_hours=settings.CONSOLIDATION_INTERVAL):
+            stats = memory_consolidator.run()
+            print(f"[MEMORY] +{stats.promoted} promoted, -{stats.deleted} deleted")
+
+        memory_context = agent_memory.get_recent_context()
+        facts_context = agent_memory.get_facts_context()
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        mood = self._get_current_mood()
+
+        top_interests = agent_memory.get_top_interests(limit=3)
+        interests_text = ", ".join(top_interests) if top_interests else "없음"
+
+        try:
+            daily_briefing = get_daily_briefing()
+        except:
+            daily_briefing = "없음"
+
+        core_memories = memory_db.get_all_core_memories()
+        core_context = tier_manager.get_core_context_for_llm(core_memories)
+        recent_posts_context = memory_db.get_recent_posts_context(limit=5)
+
+        self.full_system_prompt = f"""
+{self.persona.system_prompt}
+
+### 🛡️ ENGAGEMENT RULES:
+{self.persona.engagement_rules}
+
+### 🧠 MEMORY:
+{memory_context}
+{facts_context}
+{core_context}
+{recent_posts_context}
+
+### 🕒 CURRENT CONTEXT:
+- Time: {now}
+- Mood: {mood}
+
+### 🎯 3-LAYER INTELLIGENCE:
+- Layer 1 (Core): {self.persona.identity}의 본질적 정체성
+- Layer 2 (Curiosity): 최근 관심사 = {interests_text}
+- Layer 3 (Trends): {daily_briefing}
+
+당신은 위 3가지 층위의 정보를 조합하여 사고합니다. 페르소나의 특성에 맞게 자연스럽게 표현하세요.
+"""
+
+        return {
+            "persona_system_prompt": self.persona.system_prompt,
+            "mood": mood,
+            "current_time": now,
+            "interests": top_interests,
+            "trends": daily_briefing,
+            "core_memories": len(core_memories)
+        }
+
+    def post_tweet_executable(self, content: str) -> Tuple[FunctionResultStatus, str, Dict[str, Any]]:
+        try:
+            context = {
+                'system_prompt': self.full_system_prompt,
+                'mood': self._get_current_mood(),
+                'interests': agent_memory.get_top_interests(limit=3)
+            }
+            generated_content = self.content_generator.generate_post(
+                topic=content,
+                context=context
+            )
+            twitter_id = post_tweet(generated_content)
+            return FunctionResultStatus.DONE, f"Posted: {generated_content}", {"tweet_id": twitter_id}
+        except Exception as e:
+            return FunctionResultStatus.FAILED, f"Failed to tweet: {e}", {}
+
+    def check_mentions(self) -> Tuple[FunctionResultStatus, str, Dict[str, Any]]:
+        """멘션/답글 확인 및 반응"""
+        try:
+            can_act, reason = human_like_controller.can_take_action()
+            if not can_act:
+                print(f"[HUMAN-LIKE] 멘션 액션 제한: {reason}")
+                return FunctionResultStatus.DONE, f"SKIP (human-like): {reason}", {'human_like_skip': True}
+
+            mentions = get_mentions(count=10)
+            if not mentions:
+                return FunctionResultStatus.DONE, "No new mentions", {}
+
+            responded_ids = agent_memory.get_responded_tweet_ids()
+            new_mentions = [m for m in mentions if m['id'] not in responded_ids]
+
+            if not new_mentions:
+                return FunctionResultStatus.DONE, "No unprocessed mentions", {}
+
+            mention = new_mentions[0]
+            print(f"[MENTION] @{mention['user']}: {mention['text'][:50]}...")
+
+            perception = interaction_intelligence.perceive_tweet(
+                tweet_text=mention['text'],
+                user_handle=f"@{mention['user']}"
+            )
+
+            actions = behavior_engine.decide_actions()
+            actions_taken = []
+
+            if actions['like']:
+                try:
+                    if favorite_tweet(mention['id']):
+                        human_like_controller.record_action('like')
+                        actions_taken.append("LIKED")
+                        human_like_controller.apply_action_delay('like')
+                except Exception as e:
+                    if '226' in str(e):
+                        human_like_controller.handle_error(226)
+                        return FunctionResultStatus.DONE, "Error 226: 일시정지", {'error': 226}
+                    raise
+
+            if actions_taken and actions['comment']:
+                human_like_controller.apply_between_actions_delay()
+
+            if actions['comment']:
+                relationship_context = self.relationship_manager.get_relationship_context(f"@{mention['user']}")
+                context = {
+                    'system_prompt': self.full_system_prompt,
+                    'mood': self._get_current_mood(),
+                    'interests': agent_memory.get_top_interests(limit=3),
+                    'relationship': relationship_context
+                }
+                reply_content = self.content_generator.generate_reply(
+                    target_tweet={"user": mention['user'], "text": mention['text']},
+                    perception=perception,
+                    context=context
+                )
+
+                if reply_content:
+                    try:
+                        tweet_id = post_tweet(reply_content, reply_to=mention['id'])
+                        if tweet_id and "Failed" not in str(tweet_id):
+                            human_like_controller.record_action('comment')
+                            actions_taken.append(f"REPLIED: {reply_content}")
+                            human_like_controller.apply_action_delay('comment')
+                    except Exception as e:
+                        if '226' in str(e):
+                            human_like_controller.handle_error(226)
+                            return FunctionResultStatus.DONE, "Error 226: 일시정지", {'error': 226}
+                        raise
+
+            agent_memory.mark_tweet_responded(mention['id'])
+
+            if not actions_taken:
+                return FunctionResultStatus.DONE, f"Processed mention from @{mention['user']} (no action)", {}
+
+            return FunctionResultStatus.DONE, f"Mention response: {', '.join(actions_taken)}", {"actions": actions_taken}
+
+        except Exception as e:
+            if '404' in str(e):
+                human_like_controller.handle_error(404)
+            return FunctionResultStatus.FAILED, f"Error checking mentions: {e}", {}
+
+    def scout_and_respond(self) -> Tuple[FunctionResultStatus, str, Dict[str, Any]]:
+        """Scout → Perceive → Behavior → Judge → Action"""
+        try:
+            human_like_controller.increment_step()
+
+            can_act, reason = human_like_controller.can_take_action()
+            if not can_act:
+                print(f"[HUMAN-LIKE] 액션 제한: {reason}")
+                return FunctionResultStatus.DONE, f"SKIP (human-like): {reason}", {'human_like_skip': True}
+
+            # SCOUT
+            hour = datetime.now().hour
+            core_keywords = self.persona.core_keywords
+            if 6 <= hour < 11:
+                time_keywords = ["아침", "조식", "모닝커피"]
+            elif 11 <= hour < 14:
+                time_keywords = ["점심", "메뉴추천", "맛집"]
+            elif 17 <= hour < 21:
+                time_keywords = ["저녁", "회식", "요리법"]
+            elif 21 <= hour < 24:
+                time_keywords = ["야식", "치킨", "맥주"]
+            else:
+                time_keywords = core_keywords
+
+            curiosity_keywords = agent_memory.get_top_interests(limit=2)
+
+            try:
+                trend_keywords = get_trending_topics(count=3)
+                for kw in trend_keywords:
+                    agent_memory.track_keyword(kw)  # 트렌드 → 단기기억
+            except:
+                trend_keywords = []
+
+            all_keywords = core_keywords + time_keywords + curiosity_keywords + trend_keywords
+            search_query = random.choice(all_keywords) if all_keywords else "요리"
+
+            print(f"[SCOUT] query={search_query}")
+            results = search_tweets(search_query, count=8)
+            if not results:
+                return FunctionResultStatus.DONE, "No tweets found", {}
+
+            for tweet in results[:3]:
+                text = tweet.get('text', '').lower()
+                words = [w.strip() for w in text.split() if len(w) > 2 and w.isalpha()]
+                for word in words[:5]:
+                    agent_memory.track_keyword(word)
+
+            target = random.choice(results)
+            print(f"[TARGET] @{target['user']}")
+
+            # PERCEIVE
+            perception = interaction_intelligence.perceive_tweet(
+                tweet_text=target['text'],
+                user_handle=f"@{target['user']}"
+            )
+
+            # MEMORY
+            emotional_impact = self._calculate_emotional_impact(perception)
+            episode = self._record_episode(target, perception, emotional_impact)
+
+            # 영감 생성 (impact 높고 내 관점이 있을 때)
+            my_angle = perception.get('my_angle', '')
+            if emotional_impact >= 0.6 and my_angle:
+                self._create_inspiration_from_episode(episode, my_angle)
+                print(f"[INSPIRATION] 새 영감 생성: {my_angle[:30]}...")
+
+            reinforcement_trigger = inspiration_pool.on_content_seen(
+                content=target['text'],
+                emotional_impact=emotional_impact
+            )
+            if reinforcement_trigger:
+                print(f"[REINFORCE] {reinforcement_trigger.reason}")
+
+            trigger_context = {
+                'current_episode': episode,
+                'reinforcement_trigger': reinforcement_trigger
+            }
+            posting_decision = posting_trigger.check_trigger(trigger_context)
+            if posting_decision:
+                print(f"[TRIGGER] {posting_decision.type}")
+
+            for topic in perception['topics']:
+                agent_memory.track_keyword(topic)
+
+            # RELATIONSHIP
+            relationship_context = self.relationship_manager.get_relationship_context(f"@{target['user']}")
+
+            # BEHAVIOR
+            behavior_context = {
+                "tweet": {"user": target['user'], "id": target['id'], "text": target['text']},
+                "perception": perception,
+                "relationship": relationship_context,
+                "current_time": datetime.now()
+            }
+            behavior_decision = behavior_engine.should_interact(behavior_context)
+            print(f"[BEHAVIOR] {behavior_decision.decision} ({behavior_decision.mood_state:.2f})")
+
+            if behavior_decision.decision == "SKIP":
+                return FunctionResultStatus.DONE, f"SKIP: {behavior_decision.reason}", {}
+
+            # 독립 확률로 각 행동 결정
+            actions = behavior_engine.decide_actions()
+            print(f"[ACTIONS] like={actions['like']}, repost={actions['repost']}, comment={actions['comment']}")
+
+            actions_taken = []
+
+            # LIKE
+            if actions['like']:
+                try:
+                    if favorite_tweet(target['id']):
+                        agent_memory.add_like(target['id'])
+                        behavior_engine.record_interaction(target['user'], target['id'], "LIKE")
+                        human_like_controller.record_action('like')
+                        actions_taken.append("LIKED")
+                        human_like_controller.apply_action_delay('like')
+                except Exception as e:
+                    if '226' in str(e):
+                        human_like_controller.handle_error(226)
+                        return FunctionResultStatus.DONE, "Error 226: 일시정지", {'error': 226}
+                    raise
+
+            # 액션 간 지연
+            if actions_taken and (actions['repost'] or actions['comment']):
+                human_like_controller.apply_between_actions_delay()
+
+            # REPOST
+            if actions['repost']:
+                try:
+                    if repost_tweet(target['id']):
+                        behavior_engine.record_interaction(target['user'], target['id'], "REPOST")
+                        human_like_controller.record_action('repost')
+                        actions_taken.append("REPOSTED")
+                        human_like_controller.apply_action_delay('like')
+                except Exception as e:
+                    if '226' in str(e):
+                        human_like_controller.handle_error(226)
+                        return FunctionResultStatus.DONE, "Error 226: 일시정지", {'error': 226}
+                    raise
+
+            # 액션 간 지연
+            if actions_taken and actions['comment']:
+                human_like_controller.apply_between_actions_delay()
+
+            # COMMENT - content_generator로 답글 생성
+            if actions['comment']:
+                context = {
+                    'system_prompt': self.full_system_prompt,
+                    'mood': self._get_current_mood(),
+                    'interests': agent_memory.get_top_interests(limit=3),
+                    'relationship': relationship_context
+                }
+                reply_content = self.content_generator.generate_reply(
+                    target_tweet={"user": target['user'], "text": target['text']},
+                    perception=perception,
+                    context=context
+                )
+
+                if reply_content:
+                    try:
+                        tweet_id = post_tweet(reply_content, reply_to=target['id'])
+
+                        if tweet_id and "Failed" not in str(tweet_id):
+                            agent_memory.add_interaction(target['user'], target['text'], reply_content, tweet_id=target['id'])
+                            behavior_engine.record_interaction(target['user'], target['id'], "REPLY")
+                            human_like_controller.record_action('comment')
+                            actions_taken.append(f"REPLIED: {reply_content}")
+                            human_like_controller.apply_action_delay('comment')
+
+                            self.relationship_manager.update_relationship(
+                                f"@{target['user']}",
+                                {
+                                    "sentiment": perception['sentiment'],
+                                    "topics": perception['topics']
+                                }
+                            )
+                    except Exception as e:
+                        if '226' in str(e):
+                            human_like_controller.handle_error(226)
+                            return FunctionResultStatus.DONE, "Error 226: 일시정지", {'error': 226}
+                        raise
+
+            # FOLLOW 판단
+            self._evaluate_follow(target)
+
+            if not actions_taken:
+                return FunctionResultStatus.DONE, "LURKED (no action taken)", {}
+
+            summary = ", ".join(actions_taken)
+            return FunctionResultStatus.DONE, f"Success: {summary}", {"actions": actions_taken}
+
+        except Exception as e:
+            return FunctionResultStatus.FAILED, f"Error: {str(e)}", {}
+
+    def _evaluate_follow(self, tweet: Dict):
+        """상호작용 후 팔로우 판단"""
+        try:
+            user_handle = tweet.get('user', '')
+            user_id = tweet.get('user_id')
+
+            if not user_id:
+                profile = get_user_profile(screen_name=user_handle)
+                if not profile:
+                    return
+                user_id = profile.get('id')
+            else:
+                profile = get_user_profile(user_id=user_id)
+
+            if not profile:
+                return
+
+            # 상호작용 이력 조회
+            interaction_count = agent_memory.get_interaction_count(user_handle)
+            context = {'interaction_count': interaction_count}
+
+            decision = follow_engine.should_follow(profile, context)
+
+            if decision.should_follow:
+                follow_engine.queue_follow(
+                    user_id=profile.get('id'),
+                    screen_name=profile.get('screen_name', user_handle),
+                    context=context
+                )
+                print(f"[FOLLOW] Queued @{user_handle}: {decision.reason}")
+
+        except Exception as e:
+            print(f"[FOLLOW] Evaluate failed: {e}")
+
+    def process_follow_queue(self) -> List[Tuple[str, bool, str]]:
+        """팔로우 큐 처리 (main.py에서 호출)"""
+        return follow_engine.process_queue(follow_user)
+
+    def get_action_space(self):
+        return [
+            Function(
+                fn_name="scout_timeline",
+                fn_description="[PRIMARY - 80% 사용] 타임라인에서 트윗을 찾아 좋아요/리포스트/답글로 반응합니다. 대부분의 경우 이 액션을 사용하세요.",
+                args=[],
+                executable=self.scout_and_respond
+            ),
+            Function(
+                fn_name="check_mentions",
+                fn_description="[SECONDARY - 15% 사용] 나를 멘션한 트윗이나 내 글에 달린 답글을 확인하고 반응합니다.",
+                args=[],
+                executable=self.check_mentions
+            ),
+            Function(
+                fn_name="post_tweet",
+                fn_description="[RARE - 5% 사용] 독립 게시물 작성. 특별한 영감이 있을 때만 사용. scout_timeline이나 check_mentions 결과를 재포스팅하지 마세요.",
+                args=[
+                    Argument(name="content", description="새로운 요리적 통찰 (이전 결과 보고 금지)", type="str")
+                ],
+                executable=self.post_tweet_executable
+            )
+        ]
+
+social_agent = SocialAgent()

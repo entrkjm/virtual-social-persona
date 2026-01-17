@@ -1,0 +1,123 @@
+"""
+Persona Loader
+폴더 기반 페르소나 로딩 / Folder-based persona loading
+"""
+import yaml
+import os
+from dataclasses import dataclass, field
+from typing import List, Dict, Optional
+
+PERSONAS_DIR = "config/personas"
+
+
+@dataclass
+class PersonaConfig:
+    name: str
+    identity: str
+    occupation: str
+    core_keywords: List[str]
+    time_keywords: Dict[str, List[str]]
+    system_prompt: str
+    engagement_rules: str
+    agent_goal: str
+    agent_description: str
+    speech_style: Dict = field(default_factory=dict)
+    behavior: Dict = field(default_factory=dict)
+    relationships: Dict = field(default_factory=dict)
+    raw_data: Dict = field(default_factory=dict)
+
+
+class PersonaLoader:
+
+    @staticmethod
+    def get_persona_dir(persona_name: str) -> str:
+        """페르소나 폴더 경로"""
+        return os.path.join(PERSONAS_DIR, persona_name)
+
+    @staticmethod
+    def load_active_persona() -> PersonaConfig:
+        """활성 페르소나 로드"""
+        active_config_path = "config/active_persona.yaml"
+        with open(active_config_path, 'r', encoding='utf-8') as f:
+            active_config = yaml.safe_load(f)
+
+        persona_name = active_config['active']
+        return PersonaLoader.load_persona(persona_name)
+
+    @staticmethod
+    def load_persona(persona_name: str) -> PersonaConfig:
+        """특정 페르소나 로드"""
+        persona_dir = PersonaLoader.get_persona_dir(persona_name)
+
+        # 필수: persona.yaml
+        persona_path = os.path.join(persona_dir, "persona.yaml")
+        with open(persona_path, 'r', encoding='utf-8') as f:
+            persona_data = yaml.safe_load(f)
+
+        # prompt.txt (같은 폴더 내)
+        prompt_filename = persona_data.get('system_prompt_file', 'prompt.txt')
+        prompt_path = os.path.join(persona_dir, prompt_filename)
+        with open(prompt_path, 'r', encoding='utf-8') as f:
+            system_prompt = f.read()
+
+        # rules.txt (같은 폴더 내)
+        rules_filename = persona_data.get('engagement_rules_file', 'rules.txt')
+        rules_path = os.path.join(persona_dir, rules_filename)
+        with open(rules_path, 'r', encoding='utf-8') as f:
+            engagement_rules = f.read()
+
+        # 선택: behavior.yaml
+        behavior = {}
+        behavior_path = os.path.join(persona_dir, "behavior.yaml")
+        if os.path.exists(behavior_path):
+            with open(behavior_path, 'r', encoding='utf-8') as f:
+                behavior = yaml.safe_load(f) or {}
+
+        # 선택: relationships.yaml
+        relationships = {}
+        relationships_path = os.path.join(persona_dir, "relationships.yaml")
+        if os.path.exists(relationships_path):
+            with open(relationships_path, 'r', encoding='utf-8') as f:
+                relationships = yaml.safe_load(f) or {}
+
+        return PersonaConfig(
+            name=persona_data['name'],
+            identity=persona_data['identity'],
+            occupation=persona_data['occupation'],
+            core_keywords=persona_data.get('core_keywords', []),
+            time_keywords=persona_data.get('time_keywords', {}),
+            system_prompt=system_prompt,
+            engagement_rules=engagement_rules,
+            agent_goal=persona_data.get('agent_goal', ''),
+            agent_description=persona_data.get('agent_description', ''),
+            speech_style=persona_data.get('speech_style', {}),
+            behavior=behavior,
+            relationships=relationships,
+            raw_data=persona_data
+        )
+
+    @staticmethod
+    def list_personas() -> List[str]:
+        """사용 가능한 페르소나 목록"""
+        personas = []
+        if os.path.exists(PERSONAS_DIR):
+            for name in os.listdir(PERSONAS_DIR):
+                persona_dir = os.path.join(PERSONAS_DIR, name)
+                if os.path.isdir(persona_dir) and not name.startswith('_'):
+                    persona_yaml = os.path.join(persona_dir, "persona.yaml")
+                    if os.path.exists(persona_yaml):
+                        personas.append(name)
+        return personas
+
+
+def get_active_persona_name() -> str:
+    """활성 페르소나 이름만 반환"""
+    active_config_path = "config/active_persona.yaml"
+    with open(active_config_path, 'r', encoding='utf-8') as f:
+        active_config = yaml.safe_load(f)
+    return active_config['active']
+
+
+# Global instance
+active_persona_name = get_active_persona_name()
+active_persona = PersonaLoader.load_active_persona()

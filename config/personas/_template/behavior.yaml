@@ -1,0 +1,26 @@
+# Behavior Config Template
+
+personality_traits:
+  introversion: 0.5       # 0=외향 ~ 1=내향
+  obsessiveness: 0.5      # 집착도
+  enthusiasm: 0.5         # 열정
+
+interaction_patterns:
+  same_user:
+    max_interactions_per_day: 5
+    cooldown_minutes: 60
+  same_post:
+    max_comments_per_post: 2
+    regret_probability: 0.20
+
+  independent_actions:
+    like_probability: 0.60
+    repost_probability: 0.15
+    comment_probability: 0.12
+
+mood_modifiers:
+  time_of_day:
+    morning: 0.0
+    afternoon: 0.1
+    evening: 0.2
+    night: -0.1

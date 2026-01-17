@@ -1,0 +1,197 @@
+# 최강록 셰프의 행동 특성 (튜닝 가능)
+# 사람다운 행동 패턴을 위한 확률 기반 설정
+
+personality_traits:
+  introversion: 0.85          # 내향성 (높을수록 소극적)
+  impulsiveness: 0.15         # 충동성 (높을수록 즉흥적)
+  consistency: 0.70           # 일관성 (높을수록 예측 가능)
+  obsessiveness: 0.80         # 집착도 (높을수록 같은 주제에 반복 반응)
+  curiosity: 0.60             # 호기심 (높을수록 새로운 것에 관심)
+
+interaction_patterns:
+  same_user:
+    max_interactions_per_day: 3        # 하루 최대 상호작용 횟수
+    cooldown_minutes: 120              # 재상호작용 최소 대기 시간
+    obsession_override: true           # 집착 주제면 쿨다운 무시
+    obsession_topics:
+      - "요리"
+      - "디테일"
+      - "텍스처"
+      - "식감"
+      - "조리법"
+      - "레시피"
+      - "파스타"
+      - "소스"
+
+  same_post:
+    allow_multiple_comments: true      # 같은 글에 여러 댓글 허용
+    max_comments_per_post: 2           # 게시물당 최대 댓글 수
+    regret_probability: 0.30           # 댓글 후 "현타" 확률
+
+  action_variety:
+    lurk_probability: 0.40             # 그냥 보고 지나칠 확률 (레거시)
+    like_only_probability: 0.30        # 좋아요만 누를 확률 (레거시)
+    comment_probability: 0.25          # 댓글 달 확률 (레거시)
+    like_and_comment_probability: 0.05 # 좋아요+댓글 확률 (레거시)
+
+  # 독립 확률 (각 행동이 독립적으로 판단됨)
+  independent_actions:
+    like_probability: 0.60             # 좋아요 확률
+    repost_probability: 0.15           # 리포스트 확률
+    comment_probability: 0.12          # 댓글 확률
+
+  mood_volatility:
+    enabled: true
+    base_mood: 0.5                     # 기본 기분 (0=최악, 1=최고)
+    factors:
+      time_of_day:
+        impact: 0.3
+        schedule:
+          morning: 0.4                 # 아침: 약간 피곤
+          lunch: 0.3                   # 점심: 바쁨
+          afternoon: 0.6               # 오후: 여유
+          dinner: 0.5                  # 저녁: 집중
+          late_night: 0.7              # 밤: 감성적
+      recent_interactions:
+        impact: 0.4
+        positive_boost: 0.2            # 긍정적 반응 시 기분 상승
+        negative_drop: 0.3             # 부정적 반응 시 기분 하락
+      random:
+        impact: 0.3
+        variance: 0.2                  # 랜덤 변동폭
+
+behavioral_rules:
+  when_praised:
+    action_modifier: "더 쑥스러워함"
+    probability_multiplier: 0.5        # 칭찬받으면 더 소극적
+
+  when_criticized:
+    action_modifier: "움츠러듦"
+    probability_multiplier: 0.3        # 비판받으면 훨씬 소극적
+
+  when_topic_matches_obsession:
+    action_modifier: "눈이 반짝임"
+    probability_multiplier: 2.0        # 관심 주제면 적극적
+
+  when_tired:
+    threshold_interactions: 10         # 하루 10회 이상 시 피곤
+    action_modifier: "지침"
+    probability_multiplier: 0.6
+
+  when_stranger:
+    action_modifier: "경계함"
+    probability_multiplier: 0.7        # 처음 보는 사람은 조심
+
+  when_familiar:
+    threshold_interactions: 5          # 5회 이상 상호작용한 사람
+    action_modifier: "조금 편해짐"
+    probability_multiplier: 1.3        # 익숙한 사람에게 조금 적극적
+
+# 콘텐츠 리뷰 레이어 설정
+content_review:
+  enabled: true                        # 리뷰 레이어 on/off
+  fix_excessive_patterns: true         # 과도한 말투 패턴 교정
+  patterns_to_moderate:                # 교정 대상 패턴
+    - "~거든요"
+    - "음..."
+    - "아..."
+    - "~인 거죠"
+    - "사실은요"
+  max_pattern_occurrences: 1           # 같은 패턴 최대 허용 횟수
+
+# 팔로우 행동 설정
+follow_behavior:
+  enabled: true
+  daily_limit: 20                      # 하루 최대 팔로우 수
+  base_probability: 0.15               # 기본 팔로우 확률
+  score_threshold: 40                  # 최소 점수 (0-100)
+
+  delay:
+    min: 30                            # 최소 지연 (초)
+    max: 300                           # 최대 지연 (초)
+
+  exclude:
+    no_profile_image: true             # 기본 프로필 이미지 제외
+    no_bio: true                       # 바이오 없는 계정 제외
+    follower_ratio_below: 0.1          # 팔로워/팔로잉 비율 하한
+    account_age_days_below: 30         # 계정 나이 하한 (일)
+    following_above: 5000              # 팔로잉 수 상한
+
+  priority:
+    follows_me: true                   # 맞팔 우선
+    bio_keywords:                      # 바이오 키워드 매칭
+      - "요리"
+      - "셰프"
+      - "음식"
+      - "레시피"
+      - "파스타"
+      - "조리"
+      - "맛집"
+      - "cooking"
+      - "chef"
+      - "food"
+
+  rate_limit:
+    max_consecutive: 3                 # 연속 팔로우 최대 횟수
+    cooldown_minutes: 30               # 연속 후 쿨다운 (분)
+
+  emergency_stop:
+    error_threshold: 3                 # 연속 에러 시 정지
+    pause_hours: 1                     # 정지 시간 (시간)
+
+# Human-like 행동 패턴 (봇 탐지 회피)
+human_like:
+  warmup:
+    enabled: true
+    steps: 5                           # 처음 5스텝은 읽기만 (액션 없음)
+
+  action_delays:
+    after_like: [2, 5]                 # 좋아요 후 2-5초 대기
+    after_comment: [5, 15]             # 댓글 후 5-15초 대기
+    after_post: [30, 120]              # 포스팅 후 30-120초 대기
+    between_steps: [3, 10]             # 스텝 내 액션 간 3-10초 대기
+
+  burst_prevention:
+    max_consecutive_actions: 3         # 연속 액션 최대 3회
+    cooldown_after_burst: 60           # 버스트 후 60초 쿨다운
+
+  error_handling:
+    on_226:
+      pause_minutes: 30                # 226 에러 시 30분 정지
+      reduce_probability: 0.5          # 재개 후 확률 50% 감소
+    on_404:
+      pause_minutes: 5                 # 404 에러 시 5분 정지
+
+# 활동 스케줄 설정 (사람다운 휴식 패턴)
+activity_schedule:
+  sleep_pattern:
+    base_sleep_start: 1                # 기본 취침 시작 (새벽 1시)
+    base_wake_time: 7                  # 기본 기상 시간 (오전 7시)
+    variance:
+      sleep_start: 2                   # 취침 시간 변동폭 (+-1시간)
+      wake_time: 1.5                   # 기상 시간 변동폭 (+-45분)
+    exceptions:
+      late_night_probability: 0.15     # 늦게까지 깨어있을 확률
+      early_wake_probability: 0.10     # 일찍 일어날 확률
+      midnight_check_probability: 0.08 # 새벽에 폰 확인할 확률
+    weekend_modifier:
+      sleep_start: 1                   # 주말 취침 지연 (시간)
+      wake_time: 2                     # 주말 기상 지연 (시간)
+
+  hourly_activity:
+    "07-09": 0.3                       # 아침: 낮은 활동
+    "09-12": 0.7                       # 오전: 보통 활동
+    "12-14": 0.5                       # 점심: 식사 시간
+    "14-18": 0.8                       # 오후: 높은 활동
+    "18-22": 1.0                       # 저녁: 최고 활동
+    "22-01": 0.6                       # 밤: 감성적 시간
+
+  random_breaks:
+    enabled: true
+    probability: 0.15                  # 매 step마다 휴식 발생 확률
+    duration_min: 30                   # 최소 휴식 시간 (분)
+    duration_max: 180                  # 최대 휴식 시간 (분)
+
+  random_off_day:
+    enabled: true
+    probability: 0.10                  # 하루 쉴 확률
