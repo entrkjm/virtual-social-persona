@@ -214,6 +214,10 @@ class SocialAgent:
             if knowledge and knowledge.get('my_angle'):
                 topic_context = f"{knowledge.get('summary', '')} / 내 관점: {knowledge['my_angle']}"
 
+            # 최근 포스트 가져오기 (유사도 체크용)
+            recent_posts_data = memory_db.get_recent_posts(limit=10)
+            recent_posts = [p['content'] for p in recent_posts_data]
+
             context = {
                 'system_prompt': self.full_system_prompt,
                 'mood': self._get_current_mood(),
@@ -222,7 +226,8 @@ class SocialAgent:
             }
             generated_content = self.content_generator.generate_post(
                 topic=topic,
-                context=context
+                context=context,
+                recent_posts=recent_posts
             )
             twitter_id = post_tweet(generated_content)
             return FunctionResultStatus.DONE, f"Posted: {generated_content}", {"tweet_id": twitter_id, "topic": topic, "source": source}

@@ -3,15 +3,82 @@ Content Generator
 chat/post 스타일 분리 기반 콘텐츠 생성기
 Pattern Tracker 연동으로 말투 패턴 관리
 Response Type 기반 분기 (QUIP/SHORT/NORMAL/LONG)
+유사도 기반 중복 방지
 """
 import re
 import random
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 from dataclasses import dataclass
 from enum import Enum
 from core.llm import llm_client
 from agent.pattern_tracker import PatternTracker, create_pattern_tracker
 from agent.interaction_intelligence import ResponseType
+
+
+def extract_keywords(text: str) -> Set[str]:
+    """텍스트에서 키워드 추출 (조사 제거 + 2글자 이상)"""
+    words = re.findall(r'[가-힣a-zA-Z]{2,}', text)
+
+    stopwords = {
+        '오늘', '문득', '그게', '이제', '근데', '그런', '어떤', '뭔가', '진짜', '정말',
+        '그냥', '너무', '아주', '매우', '조금', '좀', '많이', '약간', '이런', '저런',
+        '하는', '하고', '해서', '했는데', '했어요', '거든요', '같아요', '있어요', '없어요',
+        '생각', '느낌', '기분', '마음', '것', '거', '뭐', '왜', '어떻게'
+    }
+
+    josa_pattern = r'(이|가|은|는|을|를|의|에|에서|로|으로|와|과|랑|이랑|도|만|까지|부터|처럼|같이|라고|이라고|라는|이라는|란|이란|들|했|하다|하고|해서|에요|예요|이에요|거든요|잖아요|네요|죠|이죠)$'
+
+    keywords = set()
+    for w in words:
+        if w in stopwords or len(w) < 2:
+            continue
+        cleaned = re.sub(josa_pattern, '', w)
+        if len(cleaned) >= 2:
+            keywords.add(cleaned)
+
+    return keywords
+
+
+def extract_ngrams(text: str, n: int = 3) -> Set[str]:
+    """텍스트에서 n-gram 추출 (공백 제거)"""
+    text = re.sub(r'[^가-힣a-zA-Z]', '', text)
+    if len(text) < n:
+        return set()
+    return {text[i:i+n] for i in range(len(text) - n + 1)}
+
+
+def calculate_similarity(text1: str, text2: str) -> float:
+    """키워드 + n-gram 기반 유사도
+
+    두 가지 기준:
+    1. 키워드 Jaccard similarity
+    2. 공통 4-gram 개수 기반 (5개 이상이면 유사)
+    """
+    kw1 = extract_keywords(text1)
+    kw2 = extract_keywords(text2)
+
+    ng1 = extract_ngrams(text1, 4)
+    ng2 = extract_ngrams(text2, 4)
+
+    kw_sim = 0.0
+    if kw1 and kw2:
+        common_kw = kw1 & kw2
+        union = len(kw1 | kw2)
+        kw_sim = len(common_kw) / union if union > 0 else 0.0
+        if len(common_kw) >= 3:
+            kw_sim = max(kw_sim, 0.35)
+
+    ng_sim = 0.0
+    if ng1 and ng2:
+        common_ng = ng1 & ng2
+        if len(common_ng) >= 8:
+            ng_sim = 0.5
+        elif len(common_ng) >= 5:
+            ng_sim = 0.35
+        elif len(common_ng) >= 3:
+            ng_sim = 0.2
+
+    return max(kw_sim, ng_sim)
 
 
 def twitter_weighted_len(text: str) -> int:
@@ -301,10 +368,12 @@ class ContentGenerator:
         self,
         topic: Optional[str] = None,
         inspiration: Optional[Dict] = None,
-        context: Dict = None
+        context: Dict = None,
+        recent_posts: List[str] = None
     ) -> str:
-        """독립 포스팅 생성 (post 모드) - 검증 포함"""
+        """독립 포스팅 생성 (post 모드) - 검증 + 유사도 체크 포함"""
         context = context or {}
+        recent_posts = recent_posts or []
         config = self.post_config
 
         def _generate():
@@ -321,11 +390,39 @@ class ContentGenerator:
             topic_context = context.get('topic_context', '')
             context_hint = f"\n- 배경지식: {topic_context}" if topic_context else ""
 
+            anti_repetition = ""
+            if recent_posts:
+                recent_summary = "\n".join([f"  - {p[:50]}..." if len(p) > 50 else f"  - {p}" for p in recent_posts[:5]])
+
+                all_recent_keywords = set()
+                for p in recent_posts:
+                    all_recent_keywords.update(extract_keywords(p))
+                banned_words = sorted(all_recent_keywords)[:15]
+
+                anti_repetition = f"""
+### ⚠️ 중복 방지 (매우 중요 - 반드시 지켜야 함):
+최근 내가 쓴 글들:
+{recent_summary}
+
+**금지된 단어들** (최근 사용함, 절대 쓰지 마세요):
+{', '.join(banned_words)}
+
+**금지된 시작 패턴**:
+- "혼자 생각해봤거든요" / "문득" / "오늘 문득" / "갑자기"
+- "음... 오늘" / "음... 요즘"
+
+**작성 원칙**:
+1. 위 금지 단어를 하나도 쓰지 않기
+2. 완전히 새로운 주제로 작성
+3. 다른 시작 패턴 사용
+"""
+
             prompt = f"""
 {context.get('system_prompt', '')}
 
 {style_prompt}
 {warning}
+{anti_repetition}
 
 ### 상황:
 - 현재 기분: {context.get('mood', '')}
@@ -339,10 +436,11 @@ class ContentGenerator:
 - 페르소나의 말투 특성 반영
 - 배경지식이 있으면 참고하되, 내 관점으로 표현
 - 반드시 한글만 사용 (한자, 일본어 절대 금지)
+- 최근 글과 다른 새로운 내용으로 작성
 """
             return llm_client.generate(prompt)
 
-        return self._validate_and_regenerate(_generate, config)
+        return self._validate_and_regenerate_post(_generate, config, recent_posts)
 
     def _post_process(self, text: str, config: ContentConfig) -> str:
         text = text.strip()
@@ -381,6 +479,57 @@ class ContentGenerator:
 
         print(f"[CONTENT] 재생성 실패, 마지막 결과 사용")
         return text
+
+    def _validate_and_regenerate_post(
+        self,
+        generate_fn,
+        config: ContentConfig,
+        recent_posts: List[str],
+        max_retries: int = 5,
+        similarity_threshold: float = 0.3
+    ) -> str:
+        """포스트 전용 검증: 금지 문자 + 유사도 체크 + 리뷰"""
+        for attempt in range(max_retries):
+            text = generate_fn()
+            text = self._post_process(text, config)
+
+            forbidden = get_forbidden_chars(text)
+            if forbidden:
+                print(f"[CONTENT] 금지 문자 감지 (시도 {attempt + 1}/{max_retries}): {forbidden}")
+                if attempt < max_retries - 1:
+                    self._add_regeneration_warning(forbidden)
+                continue
+
+            max_sim = 0.0
+            most_similar = ""
+            for recent in recent_posts:
+                sim = calculate_similarity(text, recent)
+                if sim > max_sim:
+                    max_sim = sim
+                    most_similar = recent[:50]
+
+            if max_sim > similarity_threshold:
+                print(f"[CONTENT] 유사도 높음 {max_sim:.2f} (시도 {attempt + 1}/{max_retries})")
+                print(f"  - 생성: {text[:50]}...")
+                print(f"  - 유사: {most_similar}...")
+                if attempt < max_retries - 1:
+                    self._add_similarity_warning(most_similar)
+                continue
+
+            text = self._review_content(text, config)
+            print(f"[CONTENT] 포스트 생성 성공 (유사도 {max_sim:.2f})")
+            return text
+
+        print(f"[CONTENT] 재생성 실패, 마지막 결과 사용")
+        return text
+
+    def _add_similarity_warning(self, similar_text: str):
+        """유사도 경고 추가"""
+        self._regeneration_warning = f"""
+[중요 경고] 이전 응답이 최근 글과 너무 비슷합니다.
+비슷한 글: "{similar_text}..."
+완전히 다른 주제/관점/표현을 사용하세요.
+"""
 
     def _add_regeneration_warning(self, forbidden_chars: List[str]):
         """재생성 시 경고 메시지 (다음 생성에 반영)"""
