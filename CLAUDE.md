@@ -27,7 +27,7 @@ Scout → Perceive → Behavior → Judge → Action → Follow
 | Behavior | `agent/core/behavior_engine.py` | 확률 기반 사람다운 판단 (기분/현타/피로) + 워밍업/지연/버스트 방지 |
 | Judge | `agent/core/content_generator.py` | 콘텐츠 생성 + 패턴 검증 + 리뷰 |
 | Action | `platforms/twitter/social.py` | Twitter API 호출 (액션 지연 적용) |
-| Follow | `agent/follow_engine.py` | 점수 기반 팔로우 판단 + 지연 실행 |
+| Follow | `agent/core/follow_engine.py` | 점수 기반 팔로우 판단 + 지연 실행 |
 
 ## 4-Layer Intelligence
 
@@ -43,9 +43,9 @@ Scout → Perceive → Behavior → Judge → Action → Follow
 ```
 agent/
 ├── bot.py                      # 메인 진입점, SocialAgent 클래스
-├── follow_engine.py            # 팔로우 판단 + 지연 큐
 ├── core/                       # 플랫폼 독립 로직
 │   ├── behavior_engine.py      # 확률 기반 행동 판단 + HumanLikeController
+│   ├── follow_engine.py        # 팔로우 판단 + 지연 큐
 │   ├── content_generator.py    # 콘텐츠 생성 + 검증 + LLM 리뷰
 │   ├── interaction_intelligence.py  # 트윗 분석 + ResponseType 결정
 │   ├── mode_manager.py         # 모드 시스템 (normal/test/aggressive)
@@ -102,7 +102,7 @@ config/
 | `agent/persona/persona_loader.py` | YAML 기반 페르소나 로딩 (중앙 로딩 지점) |
 | `agent/persona/pattern_tracker.py` | 3-Layer 말투 패턴 추적 (signature/frequent/filler/contextual) |
 | `agent/persona/relationship_manager.py` | 유저 관계 추적 (사전정의 + 동적) |
-| `agent/follow_engine.py` | 점수 기반 팔로우 판단 + 지연 큐 |
+| `agent/core/follow_engine.py` | 점수 기반 팔로우 판단 + 지연 큐 |
 | `platforms/twitter/social.py` | Twikit 기반 Twitter API + follow 기능 |
 | `platforms/twitter/trends.py` | 트렌드 수집 + Knowledge 자동 학습 |
 | `core/llm.py` | 멀티 LLM 클라이언트 (Gemini, OpenAI, Anthropic) |

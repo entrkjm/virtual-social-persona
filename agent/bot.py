@@ -13,7 +13,7 @@ from agent.memory import agent_memory
 from agent.persona.relationship_manager import initialize_relationship_manager
 from agent.core.interaction_intelligence import interaction_intelligence
 from agent.core.behavior_engine import behavior_engine, human_like_controller
-from agent.follow_engine import follow_engine
+from agent.core.follow_engine import follow_engine
 from agent.core.content_generator import create_content_generator
 from typing import Tuple, Dict, Any, Optional, List
 from datetime import datetime
