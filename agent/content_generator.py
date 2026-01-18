@@ -2,6 +2,7 @@
 Content Generator
 chat/post 스타일 분리 기반 콘텐츠 생성기
 Pattern Tracker 연동으로 말투 패턴 관리
+Response Type 기반 분기 (QUIP/SHORT/NORMAL/LONG)
 """
 import re
 import random
@@ -10,6 +11,7 @@ from dataclasses import dataclass
 from enum import Enum
 from core.llm import llm_client
 from agent.pattern_tracker import PatternTracker, create_pattern_tracker
+from agent.interaction_intelligence import ResponseType
 
 
 def twitter_weighted_len(text: str) -> int:
@@ -78,7 +80,22 @@ class ContentGenerator:
         self.persona = persona_config
         self._load_style_configs()
         self._load_review_config()
+        self._load_quip_pool()
         self.pattern_tracker = create_pattern_tracker(persona_config)
+
+    def _load_quip_pool(self):
+        """QUIP 응답용 패턴 풀 로드"""
+        raw = getattr(self.persona, 'raw_data', {})
+        self.quip_pool = raw.get('quip_pool', {})
+        if not self.quip_pool:
+            self.quip_pool = {
+                'agreement': ['인정', 'ㄹㅇ', '맞음'],
+                'impressed': ['오...', '와...'],
+                'casual': ['ㅋㅋ', 'ㅎㅎ', '음...'],
+                'food_related': ['조리겠습니다'],
+                'skeptical': ['음... 글쎄요', '...'],
+                'simple_answer': ['네', '아뇨']
+            }
 
     def _load_style_configs(self):
         speech = self.persona.speech_style or {}
@@ -142,13 +159,74 @@ class ContentGenerator:
 - 외래어도 한글로 표기 (예: 파스타, 카페)
 """
 
+    def select_quip(self, category: str) -> str:
+        """QUIP 카테고리에서 랜덤 선택"""
+        pool = self.quip_pool.get(category, [])
+        if not pool:
+            pool = self.quip_pool.get('casual', ['음...'])
+        return random.choice(pool)
+
     def generate_reply(
         self,
         target_tweet: Dict,
         perception: Dict,
         context: Dict
     ) -> str:
-        """답글 생성 (chat 모드) - 검증 포함"""
+        """답글 생성 - response_type 기반 분기"""
+        response_type = perception.get('response_type', ResponseType.NORMAL)
+
+        # QUIP: LLM 없이 패턴 풀에서 선택
+        if response_type == ResponseType.QUIP:
+            category = perception.get('quip_category', 'casual')
+            quip = self.select_quip(category)
+            print(f"[CONTENT] QUIP response: {quip} (category={category})")
+            return quip
+
+        # SHORT: 간단 프롬프트
+        if response_type == ResponseType.SHORT:
+            return self._generate_short_reply(target_tweet, perception, context)
+
+        # LONG: TMI 모드 (요리 주제)
+        if response_type == ResponseType.LONG:
+            return self._generate_long_reply(target_tweet, perception, context)
+
+        # NORMAL: 기존 로직
+        return self._generate_normal_reply(target_tweet, perception, context)
+
+    def _generate_short_reply(
+        self,
+        target_tweet: Dict,
+        perception: Dict,
+        context: Dict
+    ) -> str:
+        """SHORT 응답 (15-50자) - 최소 프롬프트"""
+        def _generate():
+            prompt = f"""
+{context.get('system_prompt', '')}
+
+상대방 글: "{target_tweet.get('text', '')}"
+
+15~50자 이내로 짧게 반응하세요.
+- 자연스럽고 캐주얼하게
+- 한글만 사용
+- 설명 없이 답글만 출력
+"""
+            return llm_client.generate(prompt)
+
+        config = ContentConfig(
+            mode=ContentMode.CHAT,
+            min_length=15, max_length=50,
+            tone="캐주얼", starters=[], endings=[], patterns=[]
+        )
+        return self._validate_and_regenerate(_generate, config)
+
+    def _generate_normal_reply(
+        self,
+        target_tweet: Dict,
+        perception: Dict,
+        context: Dict
+    ) -> str:
+        """NORMAL 응답 (50-100자) - 기존 chat 모드"""
         config = self.chat_config
 
         def _generate():
@@ -177,6 +255,43 @@ class ContentGenerator:
 - 멘션(@username) 포함 금지
 - 페르소나의 말투 특성 반영
 - 반드시 한글만 사용 (한자, 일본어 절대 금지)
+"""
+            return llm_client.generate(prompt)
+
+        return self._validate_and_regenerate(_generate, config)
+
+    def _generate_long_reply(
+        self,
+        target_tweet: Dict,
+        perception: Dict,
+        context: Dict
+    ) -> str:
+        """LONG 응답 (100+자) - 요리 TMI 모드"""
+        config = ContentConfig(
+            mode=ContentMode.CHAT,
+            min_length=80, max_length=140,
+            tone="열정적이고 디테일한",
+            starters=self.chat_config.starters,
+            endings=self.chat_config.endings,
+            patterns=[]
+        )
+
+        def _generate():
+            prompt = f"""
+{context.get('system_prompt', '')}
+
+### 상황:
+- 상대방: @{target_tweet.get('user', '')}
+- 상대방 글: "{target_tweet.get('text', '')}"
+- 주제: {', '.join(perception.get('topics', []))}
+- 요리 관련도: 높음
+
+### 지시:
+요리사로서 전문적인 관점으로 자세히 답변하세요.
+- 80~140자로 작성
+- 요리 팁이나 디테일한 정보 포함
+- 열정적이지만 페르소나 말투 유지 (음..., ~거든요 등)
+- 한글만 사용
 """
             return llm_client.generate(prompt)
 

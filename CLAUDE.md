@@ -243,6 +243,7 @@ speech_style:   # 콘텐츠 생성 스타일 분리
 | `virtuals-game-sdk` | Agent 프레임워크 | 429 rate limit 빈번, retry 로직 필수 |
 | `twikit` | Twitter 비공식 SDK | 쿠키 인증 필요 (auth_token, ct0) |
 | `google-generativeai` | Gemini LLM | API 키 필수 |
+| `chromadb` | 벡터 저장소 | **1.4.1+** 필수 (DB 마이그레이션 호환) |
 
 ## DO NOT TOUCH
 
@@ -343,41 +344,55 @@ i = 0  # 재시도 횟수
 
 ## Content Generation
 
-`agent/content_generator.py` - chat/post 스타일 분리 + 검증
+`agent/content_generator.py` - ResponseType 기반 분기 + 검증
 
-### 2가지 생성 모드
-| Mode | 용도 | 길이 | 톤 | 예시 시작어 | 예시 끝말 |
-|------|------|------|-----|------------|---------|
-| **chat** | 답글/대화 | 15-100자 | 친근하고 도움주는 | 음..., 아... | ~요, ~거든요 |
-| **post** | 독립 포스팅 | 20-120자 | 짧고 임팩트 | 갑자기 생각났는데 | ~임, ... |
+### ResponseType 분기 시스템
+
+```
+트윗 분석 (perceive)
+    ↓
+complexity + quip_category 판단
+    ↓
+response_type 결정
+    ↓
+┌─ QUIP   → LLM 없이 quip_pool에서 선택 (1-15자)
+├─ SHORT  → 간단 프롬프트 (15-50자)
+├─ NORMAL → 표준 chat 모드 (50-100자)
+└─ LONG   → 요리 TMI 모드 (80-140자)
+```
+
+### ResponseType 결정 기준
+
+| Type | 조건 | LLM 호출 |
+|------|------|----------|
+| **QUIP** | complexity=simple + quip_category!=none | ❌ 패턴 풀 |
+| **SHORT** | complexity=simple + quip_category=none | ✅ 최소 |
+| **NORMAL** | complexity=moderate | ✅ 표준 |
+| **LONG** | cooking_rel≥0.7 + complex, 또는 요리 질문 | ✅ 상세 |
+
+### QUIP Pool (persona.yaml)
+```yaml
+quip_pool:
+  agreement: ["인정", "ㄹㅇ", "맞음"]
+  impressed: ["조리겠습니다", "이건 뭉근하게...", "풍미가..."]
+  casual: ["ㅋㅋ", "ㅎㅎ", "음..."]
+  food_related: ["들기름 한바퀴", "이건 조려야됨"]
+  skeptical: ["음... 글쎄요", "그건 좀..."]
+  simple_answer: ["네", "아뇨"]
+```
 
 ### 검증 레이어
 1. **금지 문자 검증**: 한자/일본어 포함 시 재생성 (최대 3회)
 2. **Twitter 글자수 검증**: 한글 가중치 적용 (한글 1자 = 2 가중치, 280 제한)
 3. **LLM 리뷰 레이어**: Pattern Tracker 연동
    - 과도한 말투 패턴 교정 (`~거든요` 연속 사용 등)
-   - 패턴 위반 사항 자동 교정
-   - 자연스러운 일반인 글 스타일로 다듬기
+   - 페르소나 보존 (min_per_post, is_core_trait)
 
-### 사용 예시 (코드)
-```python
-from agent.content_generator import create_content_generator
-
-generator = create_content_generator(persona_config)
-
-# 답글 생성
-reply = generator.generate_reply(
-    target_tweet={"user": "some_user", "text": "파스타 만들기 어려워요"},
-    perception={"sentiment": "neutral", "topics": ["요리"]},
-    context={"mood": "평온함", "interests": ["파스타"]}
-)
-
-# 독립 포스팅 생성
-post = generator.generate_post(
-    topic="요리 디테일",
-    context={"mood": "평온함", "interests": ["파스타"]}
-)
-```
+### Post 모드 (독립 포스팅)
+| Mode | 용도 | 길이 | 톤 |
+|------|------|------|-----|
+| **chat** | 답글/대화 | 15-100자 | 친근하고 도움주는 |
+| **post** | 독립 포스팅 | 20-120자 | 짧고 임팩트 |
 
 ## Activity Scheduler
 
