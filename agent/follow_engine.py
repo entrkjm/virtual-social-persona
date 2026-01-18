@@ -8,7 +8,7 @@ from typing import Dict, List, Tuple, Optional, Any
 from dataclasses import dataclass, field
 import yaml
 from config.settings import settings
-from agent.persona_loader import active_persona_name
+from agent.persona.persona_loader import active_persona_name
 
 
 @dataclass

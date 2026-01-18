@@ -2,7 +2,7 @@ from agent.memory.database import MemoryDatabase
 from agent.memory.inspiration_pool import InspirationPool
 from agent.memory.tier_manager import TierManager
 from agent.memory.consolidator import MemoryConsolidator
-from agent.json_memory import agent_memory, AgentMemory
+from agent.memory.session import agent_memory, AgentMemory
 
 try:
     from agent.memory.vector_store import VectorStore

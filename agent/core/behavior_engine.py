@@ -10,8 +10,8 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from config.settings import settings
-from agent.persona_loader import active_persona_name
-from agent.mode_manager import mode_manager
+from agent.persona.persona_loader import active_persona_name
+from agent.core.mode_manager import mode_manager
 
 
 @dataclass
@@ -385,7 +385,7 @@ class BehaviorEngine:
         sentiment = context.get('perception', {}).get('sentiment', 'neutral')
         relationship = context.get('relationship', '')
 
-        from agent.mode_manager import AgentMode
+        from agent.core.mode_manager import AgentMode
         if mode_manager.mode == AgentMode.AGGRESSIVE:
             base_prob = 0.95
         elif mode_manager.mode == AgentMode.TEST:

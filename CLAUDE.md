@@ -22,47 +22,94 @@ Scout → Perceive → Behavior → Judge → Action → Follow
 
 | Stage | 담당 | 역할 |
 |-------|------|------|
-| Scout | `bot.py` | 3-Layer 키워드로 트윗 검색 |
-| Perceive | `interaction_intelligence.py` | LLM으로 트윗 의미/감정/의도 분석 |
-| Behavior | `behavior_engine.py` + `human_like_controller.py` | 확률 기반 사람다운 판단 (기분/현타/피로) + 워밍업/지연/버스트 방지 |
-| Judge | `content_generator.py` | 콘텐츠 생성 + 패턴 검증 + 리뷰 |
-| Action | `actions/social.py` | Twitter API 호출 (액션 지연 적용) |
-| Follow | `follow_engine.py` | 점수 기반 팔로우 판단 + 지연 실행 |
+| Scout | `agent/bot.py` | 4-Layer 키워드로 트윗 검색 |
+| Perceive | `agent/core/interaction_intelligence.py` | LLM으로 트윗 의미/감정/의도 분석 |
+| Behavior | `agent/core/behavior_engine.py` | 확률 기반 사람다운 판단 (기분/현타/피로) + 워밍업/지연/버스트 방지 |
+| Judge | `agent/core/content_generator.py` | 콘텐츠 생성 + 패턴 검증 + 리뷰 |
+| Action | `platforms/twitter/social.py` | Twitter API 호출 (액션 지연 적용) |
+| Follow | `agent/follow_engine.py` | 점수 기반 팔로우 판단 + 지연 실행 |
 
 ## 4-Layer Intelligence
 
 | Layer | 소스 | 용도 |
 |-------|------|------|
-| Core | `persona.yaml` | 페르소나 본질 (요리사 정체성) |
-| Curiosity | `json_memory.py` | 최근 관심사 (자동 학습/감쇠, 소스 추적) |
-| Knowledge | `knowledge_base.py` | 트렌드 컨텍스트 (요약/관련도/내 관점) |
-| Trends | `trends.py` | 실시간 트위터 트렌드 → Knowledge로 학습
+| Core | `config/personas/*/persona.yaml` | 페르소나 본질 (요리사 정체성) |
+| Curiosity | `agent/memory/session.py` | 최근 관심사 (자동 학습/감쇠, 소스 추적) |
+| Knowledge | `agent/knowledge/knowledge_base.py` | 트렌드 컨텍스트 (요약/관련도/내 관점) |
+| Trends | `platforms/twitter/trends.py` | 실시간 트위터 트렌드 → Knowledge로 학습
+
+## Folder Structure
+
+```
+agent/
+├── bot.py                      # 메인 진입점, SocialAgent 클래스
+├── follow_engine.py            # 팔로우 판단 + 지연 큐
+├── core/                       # 플랫폼 독립 로직
+│   ├── behavior_engine.py      # 확률 기반 행동 판단 + HumanLikeController
+│   ├── content_generator.py    # 콘텐츠 생성 + 검증 + LLM 리뷰
+│   ├── interaction_intelligence.py  # 트윗 분석 + ResponseType 결정
+│   ├── mode_manager.py         # 모드 시스템 (normal/test/aggressive)
+│   ├── activity_scheduler.py   # 수면/휴식 패턴
+│   └── topic_selector.py       # 가중치 기반 토픽 선택
+├── memory/                     # 메모리 시스템
+│   ├── session.py              # 세션 메모리 (interactions, likes, curiosity)
+│   ├── database.py             # SQLite 장기 메모리
+│   ├── inspiration_pool.py     # 영감 풀
+│   ├── tier_manager.py         # 티어 관리 + 품질 경쟁
+│   ├── consolidator.py         # 메모리 정리
+│   └── vector_store.py         # ChromaDB 벡터 검색
+├── knowledge/                  # 세상 지식
+│   └── knowledge_base.py       # 트렌드/키워드 컨텍스트 학습
+├── persona/                    # 페르소나 관련
+│   ├── persona_loader.py       # YAML 로딩 (중앙 진입점)
+│   ├── pattern_tracker.py      # 말투 패턴 추적
+│   └── relationship_manager.py # 유저 관계 추적
+└── posting/
+    └── trigger_engine.py       # 포스팅 트리거
+
+platforms/
+└── twitter/                    # Twitter 플랫폼
+    ├── social.py               # Twikit API (post, search, like, follow)
+    └── trends.py               # 트렌드 수집 + 지식 학습
+
+core/
+└── llm.py                      # 멀티 LLM 클라이언트
+
+config/
+└── personas/                   # 페르소나별 설정
+    └── {name}/
+        ├── persona.yaml        # 정체성 + 말투
+        ├── behavior.yaml       # 행동 확률 + 시간대 설정
+        ├── relationships.yaml  # 관계도
+        ├── prompt.txt          # 시스템 프롬프트
+        └── rules.txt           # 소통 규칙
+```
 
 ## Key Components
 
 | 파일 | 역할 |
 |------|------|
 | `agent/bot.py` | SocialAgent 클래스, 전체 워크플로우 |
-| `agent/behavior_engine.py` | BehaviorEngine - 확률 기반 행동 판단 (기분/현타/피로) |
-| | HumanLikeController - 워밍업/지연/버스트 방지/에러 핸들링 |
-| `agent/content_generator.py` | chat/post 스타일 분리 콘텐츠 생성 + 검증 + LLM 리뷰 |
-| `agent/pattern_tracker.py` | 3-Layer 말투 패턴 추적 (signature/frequent/filler/contextual) |
-| `agent/topic_selector.py` | 가중치 기반 토픽 선택 (core/time/curiosity/trends/inspiration) |
-| `agent/knowledge_base.py` | 트렌드/키워드 컨텍스트 학습 (요약, 관련도, 내 관점) |
-| `agent/activity_scheduler.py` | 사람다운 휴식 패턴 (수면/시간대별 활동/랜덤 휴식/오프데이) |
-| `agent/mode_manager.py` | 모드 시스템 (normal/test/aggressive) + step 확률 관리 |
+| `agent/core/behavior_engine.py` | BehaviorEngine + HumanLikeController (워밍업/지연/버스트 방지) |
+| `agent/core/content_generator.py` | chat/post 스타일 분리 콘텐츠 생성 + 검증 + LLM 리뷰 |
+| `agent/core/interaction_intelligence.py` | LLM 기반 트윗 분석/판단 + ResponseType 결정 |
+| `agent/core/mode_manager.py` | 모드 시스템 (normal/test/aggressive) + step 확률 관리 |
+| `agent/core/activity_scheduler.py` | 사람다운 휴식 패턴 (수면/시간대별 활동/랜덤 휴식/오프데이) |
+| `agent/core/topic_selector.py` | 가중치 기반 토픽 선택 (core/time/curiosity/trends/inspiration) |
+| `agent/memory/session.py` | 세션 메모리 - interactions, facts, curiosity |
+| `agent/memory/database.py` | SQLite 장기 메모리 (Episode, Inspiration, CoreMemory) |
+| `agent/knowledge/knowledge_base.py` | 트렌드/키워드 컨텍스트 학습 (요약, 관련도, 내 관점) |
+| `agent/persona/persona_loader.py` | YAML 기반 페르소나 로딩 (중앙 로딩 지점) |
+| `agent/persona/pattern_tracker.py` | 3-Layer 말투 패턴 추적 (signature/frequent/filler/contextual) |
+| `agent/persona/relationship_manager.py` | 유저 관계 추적 (사전정의 + 동적) |
 | `agent/follow_engine.py` | 점수 기반 팔로우 판단 + 지연 큐 |
-| `agent/memory.py` | AgentMemory - interactions, facts, curiosity, relationships |
-| `agent/interaction_intelligence.py` | LLM 기반 트윗 분석/판단 + ResponseType 결정 |
-| `agent/relationship_manager.py` | 유저 관계 추적 (사전정의 + 동적) |
-| `agent/persona_loader.py` | YAML 기반 페르소나 로딩 (중앙 로딩 지점) |
-| `actions/social.py` | Twikit 기반 Twitter API + follow 기능 |
-| `actions/trends.py` | 트렌드 수집 |
+| `platforms/twitter/social.py` | Twikit 기반 Twitter API + follow 기능 |
+| `platforms/twitter/trends.py` | 트렌드 수집 + Knowledge 자동 학습 |
 | `core/llm.py` | 멀티 LLM 클라이언트 (Gemini, OpenAI, Anthropic) |
 
 ## Behavior Engine
 
-`agent/behavior_engine.py` + `config/personas/chef_choi/behavior.yaml`
+`agent/core/behavior_engine.py` + `config/personas/chef_choi/behavior.yaml`
 
 ### BehaviorEngine (확률 기반 판단)
 - **확률 기반 판단**: 같은 상황에서도 다르게 반응
@@ -180,7 +227,7 @@ content_review:
 
 ## Tweet Selection & Action Decision
 
-`agent/bot.py` + `agent/behavior_engine.py` + `actions/social.py`
+`agent/bot.py` + `agent/core/behavior_engine.py` + `platforms/twitter/social.py`
 
 ### 트윗 선택 (Score-based Selection)
 
@@ -216,7 +263,7 @@ comment_prob = base * relevance_factor
 
 ### Engagement 데이터 수집
 
-`actions/social.py`의 `TweetData` 구조:
+`platforms/twitter/social.py`의 `TweetData` 구조:
 ```python
 {
     "id": str,
@@ -316,7 +363,7 @@ speech_style:   # 콘텐츠 생성 스타일 분리
 
 ## Mode System
 
-`agent/mode_manager.py` + 환경변수 `AGENT_MODE`
+`agent/core/mode_manager.py` + 환경변수 `AGENT_MODE`
 
 ### Step 확률 (scout / mentions / post)
 | Mode | 간격 | Scout | Mentions | Post | 워밍업 | 수면 | 휴식 |
@@ -404,7 +451,7 @@ i = 0  # 재시도 횟수
 
 ## Content Generation
 
-`agent/content_generator.py` - ResponseType 기반 분기 + 검증
+`agent/core/content_generator.py` - ResponseType 기반 분기 + 검증
 
 ### ResponseType 분기 시스템
 
@@ -456,7 +503,7 @@ quip_pool:
 
 ## Activity Scheduler
 
-`agent/activity_scheduler.py` - 사람다운 휴식 패턴
+`agent/core/activity_scheduler.py` - 사람다운 휴식 패턴
 
 ### 기능
 - **수면 시간**: 매일 다른 취침/기상 시간 (variance 적용)
@@ -479,7 +526,7 @@ quip_pool:
 `agent/memory/` - 품질 경쟁 기반 동적 메모리
 
 ### 단기 기억 (Operational)
-**파일**: `agent/json_memory.py` → `agent_memory.json`
+**파일**: `agent/memory/session.py` → `agent_memory.json`
 
 | 데이터 | 보관 한계 | 용도 |
 |--------|----------|------|
@@ -561,7 +608,7 @@ theme: 반복 테마 (used ≥ 3)
 - Mode Manager: 226 에러 시 자동 안전 모드 전환
 - TopicSelector: 가중치 기반 토픽 선택 (core=1.0, time=1.2, curiosity=2.0, inspiration=2.5, trends=1.5)
 - **Knowledge Base**: 트렌드 키워드 조사 후 컨텍스트 저장 (24h 만료)
-  - 트렌드 수집 시 자동 학습 (`trends.py` → `knowledge_base.learn_topic()`)
+  - 트렌드 수집 시 자동 학습 (`platforms/twitter/trends.py` → `knowledge_base.learn_topic()`)
   - 포스팅 시 관련 지식 조회 → LLM 프롬프트에 배경지식 추가
   - 관련도 기반 필터링 (`min_relevance=0.2`)
 - **Curiosity 확장**: count뿐 아니라 first_seen, last_seen, sources 추적
@@ -583,11 +630,11 @@ python main.py            →  단일 프로세스 실행
 
 | 데이터 | 현재 | 로딩 위치 |
 |--------|------|----------|
-| 페르소나 설정 | YAML | `persona_loader.py` |
-| 행동 설정 | YAML | `persona_loader.py` |
-| 메모리 | JSON | `memory.py` |
-| 관계 설정 | YAML | `relationship_manager.py` (persona_loader 경유) |
-| Twitter 인증 | .env + 쿠키 | `social.py` |
+| 페르소나 설정 | YAML | `agent/persona/persona_loader.py` |
+| 행동 설정 | YAML | `agent/persona/persona_loader.py` |
+| 메모리 | JSON | `agent/memory/session.py` |
+| 관계 설정 | YAML | `agent/persona/relationship_manager.py` |
+| Twitter 인증 | .env + 쿠키 | `platforms/twitter/social.py` |
 
 ### 향후 확장 (B: SaaS 서비스용)
 
@@ -628,4 +675,23 @@ class DBProvider(PersonaProvider):      # 나중에
         return db.query(Persona).get(persona_id)
 ```
 
-**핵심**: `persona_loader.py` 내부만 수정하면 DB 전환 완료
+**핵심**: `agent/persona/persona_loader.py` 내부만 수정하면 DB 전환 완료
+
+## Platform Abstraction
+
+현재 Twitter 전용이지만, 다른 플랫폼 확장을 위한 구조 준비:
+
+```
+platforms/
+├── twitter/        # 현재 구현
+│   ├── social.py
+│   └── trends.py
+├── threads/        # 향후 확장
+├── bluesky/        # 향후 확장
+└── base.py         # 공통 인터페이스 (향후)
+```
+
+**확장 시 변경 지점**:
+- `platforms/{platform}/social.py`: 플랫폼별 API 구현
+- `agent/bot.py`: 플랫폼 선택 로직 추가
+- `agent/knowledge/knowledge_base.py`: 플랫폼별 검색 함수 주입

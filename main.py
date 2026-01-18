@@ -4,9 +4,9 @@ Virtuals Protocol G.A.M.E SDK (Optional)
 """
 from config.settings import settings
 from agent.bot import social_agent
-from agent.persona_loader import active_persona
-from agent.mode_manager import mode_manager
-from agent.activity_scheduler import ActivityScheduler
+from agent.persona.persona_loader import active_persona
+from agent.core.mode_manager import mode_manager
+from agent.core.activity_scheduler import ActivityScheduler
 import time
 import random
 

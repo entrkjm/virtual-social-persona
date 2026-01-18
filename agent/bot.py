@@ -5,16 +5,16 @@ Scout → Perceive → Behavior → Judge → Action
 from game_sdk.game.custom_types import Function, Argument, FunctionResultStatus, FunctionResult
 from config.settings import settings
 from actions.market_data import get_market_data
-from actions.social import post_tweet, search_tweets, favorite_tweet, repost_tweet, get_mentions, follow_user, get_user_profile
-from actions.trends import get_trending_topics, get_daily_briefing
+from platforms.twitter.social import post_tweet, search_tweets, favorite_tweet, repost_tweet, get_mentions, follow_user, get_user_profile
+from platforms.twitter.trends import get_trending_topics, get_daily_briefing
 from core.llm import llm_client
-from agent.persona_loader import active_persona
+from agent.persona.persona_loader import active_persona
 from agent.memory import agent_memory
-from agent.relationship_manager import initialize_relationship_manager
-from agent.interaction_intelligence import interaction_intelligence
-from agent.behavior_engine import behavior_engine, human_like_controller
+from agent.persona.relationship_manager import initialize_relationship_manager
+from agent.core.interaction_intelligence import interaction_intelligence
+from agent.core.behavior_engine import behavior_engine, human_like_controller
 from agent.follow_engine import follow_engine
-from agent.content_generator import create_content_generator
+from agent.core.content_generator import create_content_generator
 from typing import Tuple, Dict, Any, Optional, List
 from datetime import datetime
 import random
@@ -25,8 +25,8 @@ from agent.memory.inspiration_pool import inspiration_pool
 from agent.memory.tier_manager import tier_manager
 from agent.memory.consolidator import memory_consolidator
 from agent.posting.trigger_engine import posting_trigger
-from agent.topic_selector import topic_selector
-from agent.knowledge_base import knowledge_base
+from agent.core.topic_selector import topic_selector
+from agent.knowledge.knowledge_base import knowledge_base
 
 class SocialAgent:
     def __init__(self):

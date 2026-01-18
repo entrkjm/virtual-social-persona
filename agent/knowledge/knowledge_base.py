@@ -9,8 +9,8 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from config.settings import settings
 from core.llm import llm_client
-from actions.social import search_tweets
-from agent.persona_loader import active_persona
+from platforms.twitter.social import search_tweets
+from agent.persona.persona_loader import active_persona
 
 
 KNOWLEDGE_FILE = os.path.join(settings.DATA_DIR, "knowledge_base.json")

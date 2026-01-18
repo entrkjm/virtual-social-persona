@@ -11,8 +11,8 @@ from typing import Dict, List, Optional, Set
 from dataclasses import dataclass
 from enum import Enum
 from core.llm import llm_client
-from agent.pattern_tracker import PatternTracker, create_pattern_tracker
-from agent.interaction_intelligence import ResponseType
+from agent.persona.pattern_tracker import PatternTracker, create_pattern_tracker
+from agent.core.interaction_intelligence import ResponseType
 
 
 def extract_keywords(text: str) -> Set[str]:

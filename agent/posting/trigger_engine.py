@@ -69,7 +69,7 @@ class PostingTriggerEngine:
         """BehaviorEngine 지연 로딩"""
         if self._behavior_engine is None:
             try:
-                from agent.behavior_engine import behavior_engine
+                from agent.core.behavior_engine import behavior_engine
                 self._behavior_engine = behavior_engine
             except ImportError:
                 pass

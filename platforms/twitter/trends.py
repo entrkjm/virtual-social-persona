@@ -15,7 +15,7 @@ def _get_knowledge_base():
     """Lazy import to avoid circular dependency"""
     global _knowledge_base
     if _knowledge_base is None:
-        from agent.knowledge_base import knowledge_base
+        from agent.knowledge.knowledge_base import knowledge_base
         _knowledge_base = knowledge_base
     return _knowledge_base
 
