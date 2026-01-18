@@ -3,12 +3,22 @@ Inspiration Pool
 영감 저장소 + 강화 엔진
 Inspiration storage and reinforcement engine
 """
+import re
 import uuid
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass
 
 from agent.memory.database import MemoryDatabase, Inspiration, Episode, generate_id
+
+
+def normalize_topic(topic: str) -> str:
+    """토픽 정규화: 공백 제거, 소문자화"""
+    if not topic:
+        return "general"
+    # 공백 제거 + 소문자
+    normalized = re.sub(r'\s+', '', topic.strip().lower())
+    return normalized if normalized else "general"
 from agent.memory.tier_manager import TierManager
 
 try:
@@ -72,8 +82,19 @@ class InspirationPool:
             urgency: 'flash' (즉각) or 'brewing' (숙성)
 
         Returns:
-            생성된 Inspiration
+            생성된 Inspiration (또는 강화된 기존 Inspiration)
         """
+        # 토픽 정규화 (공백 제거)
+        raw_topic = episode.topics[0] if episode.topics else "general"
+        topic = normalize_topic(raw_topic)
+
+        # 기존 동일 토픽 영감 있으면 강화
+        existing = self.db.get_inspiration_by_topic(topic)
+        if existing:
+            self._reinforce(existing, 'similar_content')
+            print(f"[INSPIRATION] Reinforced existing: {topic} (strength={existing.strength:.2f})")
+            return existing
+
         insp_id = generate_id()
         now = datetime.now()
 
@@ -89,7 +110,7 @@ class InspirationPool:
             id=insp_id,
             episode_id=episode.id,
             trigger_content=episode.content,
-            topic=episode.topics[0] if episode.topics else "general",
+            topic=topic,
             my_angle=my_angle,
             potential_post=None,
             tier=initial_tier,

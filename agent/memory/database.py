@@ -296,6 +296,17 @@ class MemoryDatabase:
             row = cursor.fetchone()
             return self._row_to_inspiration(row) if row else None
 
+    def get_inspiration_by_topic(self, topic: str) -> Optional[Inspiration]:
+        """토픽으로 영감 조회 (가장 강한 것)"""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM inspirations WHERE topic = ?
+                ORDER BY strength DESC LIMIT 1
+            """, (topic,))
+            row = cursor.fetchone()
+            return self._row_to_inspiration(row) if row else None
+
     def get_inspirations_by_tier(self, tier: str, order_by: str = "strength DESC", limit: int = 100) -> List[Inspiration]:
         with self._get_connection() as conn:
             cursor = conn.cursor()
