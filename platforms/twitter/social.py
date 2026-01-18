@@ -371,12 +371,16 @@ async def _get_my_tweets_twikit(screen_name: str, count: int = 50) -> List[dict]
 
         result = []
         for tweet in tweets:
+            text = tweet.text or tweet.full_text or ""
+            # RT는 스킵 (리트윗)
+            if text.startswith("RT @"):
+                continue
             result.append({
                 "id": tweet.id,
-                "text": tweet.text,
+                "text": text,
                 "created_at": str(tweet.created_at) if tweet.created_at else None,
-                "is_reply": tweet.in_reply_to_tweet_id is not None,
-                "reply_to": tweet.in_reply_to_tweet_id
+                "is_reply": tweet.in_reply_to is not None,
+                "reply_to": tweet.in_reply_to
             })
         return result
     return await _with_retry(_do)
