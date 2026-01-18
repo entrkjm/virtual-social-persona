@@ -178,6 +178,64 @@ content_review:
   max_pattern_occurrences: 1
 ```
 
+## Tweet Selection & Action Decision
+
+`agent/bot.py` + `agent/behavior_engine.py` + `actions/social.py`
+
+### 트윗 선택 (Score-based Selection)
+
+검색된 트윗 중 가장 적합한 트윗을 점수 기반으로 선택:
+
+```
+search_tweets(8개) → 전체 perceive → 점수 계산 → 최고 점수 선택
+```
+
+**점수 계산 (`_calculate_tweet_score`)**:
+| 요소 | 가중치 | 설명 |
+|------|--------|------|
+| 관련도 | 50% | `perception.relevance_to_cooking` (0.0~1.0) |
+| 인기도 | 30% | `(likes + retweets*2) / 50` 정규화 |
+| 복잡도 | 20% | complex=0.2, moderate=0.1, simple=0 |
+
+### 행동 결정 (Context-aware Action Decision)
+
+`decide_actions(perception, tweet)`: 관련도/인기도 기반 확률 조정
+
+**확률 조정 공식**:
+```python
+relevance_factor = 0.3 + (relevance * 0.7)  # 0.3 ~ 1.0
+popularity_factor = 0.5 + (likes + retweets*2) / 40  # 0.5 ~ 1.0
+
+like_prob = base * relevance_factor
+repost_prob = base * relevance_factor * popularity_factor
+comment_prob = base * relevance_factor
+```
+
+**Repost 제한**:
+- `relevance < 0.4` → repost 확률 0% (최소 관련도 임계값)
+
+### Engagement 데이터 수집
+
+`actions/social.py`의 `TweetData` 구조:
+```python
+{
+    "id": str,
+    "user": str,
+    "text": str,
+    "created_at": str,
+    "engagement": {
+        "favorite_count": int,
+        "retweet_count": int,
+        "reply_count": int,
+        "quote_count": int,
+        "view_count": int | None,
+        "bookmark_count": int
+    }
+}
+```
+
+확장성: 추후 Twitter API v2 전환 시 `_search_tweets_twikit`만 교체
+
 ## Persona System
 
 ### 폴더 구조

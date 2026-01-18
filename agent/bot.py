@@ -78,6 +78,38 @@ class SocialAgent:
 
         return min(1.0, base_impact)
 
+    def _calculate_tweet_score(self, tweet: Dict, perception: Dict) -> float:
+        """트윗 상호작용 적합도 점수 (0.0 ~ 1.0)
+
+        가중치:
+        - 관련도 50%: 페르소나 전문 분야와의 관련성
+        - 인기도 30%: engagement 지표 (likes + retweets*2)
+        - 복잡도 20%: 깊은 대화 가능성
+        """
+        score = 0.0
+
+        # 1. 관련도 (50%) - perception의 relevance_to_cooking 사용
+        relevance = perception.get('relevance_to_cooking', 0.0)
+        score += relevance * 0.5
+
+        # 2. 인기도 (30%) - engagement 기반
+        engagement = tweet.get('engagement', {})
+        likes = engagement.get('favorite_count', 0)
+        retweets = engagement.get('retweet_count', 0)
+        # 50개 기준 정규화, retweet은 2배 가중
+        popularity = min(1.0, (likes + retweets * 2) / 50)
+        score += popularity * 0.3
+
+        # 3. 복잡도 (20%) - 깊은 대화 가능성
+        complexity = perception.get('complexity', 'moderate')
+        if complexity == 'complex':
+            score += 0.2
+        elif complexity == 'moderate':
+            score += 0.1
+        # simple은 0점
+
+        return score
+
     def _record_episode(self, tweet: Dict, perception: Dict, emotional_impact: float) -> Episode:
         episode = Episode(
             id=generate_id(),
@@ -260,7 +292,7 @@ class SocialAgent:
                 user_handle=f"@{mention['user']}"
             )
 
-            actions = behavior_engine.decide_actions()
+            actions = behavior_engine.decide_actions(perception=perception, tweet=mention)
             actions_taken = []
 
             if actions['like']:
@@ -380,20 +412,26 @@ class SocialAgent:
             if not results:
                 return FunctionResultStatus.DONE, "No tweets found", {}
 
-            for tweet in results[:3]:
+            # 전체 트윗 평가 및 점수화
+            scored_tweets = []
+            for tweet in results:
                 text = tweet.get('text', '').lower()
                 words = [w.strip() for w in text.split() if len(w) > 2 and w.isalpha()]
-                for word in words[:5]:
+                for word in words[:3]:
                     agent_memory.track_keyword(word, source="tweet")
 
-            target = random.choice(results)
-            print(f"[TARGET] @{target['user']}")
+                tweet_perception = interaction_intelligence.perceive_tweet(
+                    tweet_text=tweet['text'],
+                    user_handle=f"@{tweet['user']}"
+                )
+                tweet_score = self._calculate_tweet_score(tweet, tweet_perception)
+                scored_tweets.append((tweet, tweet_perception, tweet_score))
 
-            # PERCEIVE
-            perception = interaction_intelligence.perceive_tweet(
-                tweet_text=target['text'],
-                user_handle=f"@{target['user']}"
-            )
+            scored_tweets.sort(key=lambda x: x[2], reverse=True)
+            target, perception, score = scored_tweets[0]
+
+            eng = target.get('engagement', {})
+            print(f"[TARGET] @{target['user']} (score={score:.2f}, likes={eng.get('favorite_count', 0)}, rel={perception.get('relevance_to_cooking', 0):.1f})")
 
             # MEMORY
             emotional_impact = self._calculate_emotional_impact(perception)
@@ -439,8 +477,8 @@ class SocialAgent:
             if behavior_decision.decision == "SKIP":
                 return FunctionResultStatus.DONE, f"SKIP: {behavior_decision.reason}", {}
 
-            # 독립 확률로 각 행동 결정
-            actions = behavior_engine.decide_actions()
+            # 독립 확률로 각 행동 결정 (관련도/인기도 기반)
+            actions = behavior_engine.decide_actions(perception=perception, tweet=target)
             print(f"[ACTIONS] like={actions['like']}, repost={actions['repost']}, comment={actions['comment']}")
 
             actions_taken = []

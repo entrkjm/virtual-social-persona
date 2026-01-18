@@ -2,11 +2,33 @@
 Twitter API via Twikit
 트위터 API 래퍼 - 포스트, 검색, 좋아요, 멘션, 알림
 Wrapper for Twitter API using Twikit
+
+확장성: 추후 Twitter API v2 전환 시 _search_tweets_twikit만 교체
 """
 import os
 import asyncio
+from typing import TypedDict, Optional, List
 from twikit import Client
 from config.settings import settings
+
+
+class TweetEngagement(TypedDict, total=False):
+    """트윗 engagement 메트릭 (확장 가능)"""
+    favorite_count: int
+    retweet_count: int
+    reply_count: int
+    quote_count: int
+    view_count: Optional[int]
+    bookmark_count: int
+
+
+class TweetData(TypedDict, total=False):
+    """통합 트윗 데이터 구조 (twikit/Twitter API v2 공용)"""
+    id: str
+    user: str
+    text: str
+    created_at: str
+    engagement: TweetEngagement
 
 COOKIES_FILE = os.path.join(settings.DATA_DIR, "twitter_cookies.json")
 
@@ -88,17 +110,30 @@ async def _post_tweet_twikit(content: str, reply_to: str = None):
     return await _with_retry(_do)
 
 
-async def _search_tweets_twikit(query: str, count: int = 5):
+def _extract_engagement(tweet) -> TweetEngagement:
+    """twikit Tweet 객체에서 engagement 추출 (안전하게)"""
+    return {
+        'favorite_count': getattr(tweet, 'favorite_count', 0) or 0,
+        'retweet_count': getattr(tweet, 'retweet_count', 0) or 0,
+        'reply_count': getattr(tweet, 'reply_count', 0) or 0,
+        'quote_count': getattr(tweet, 'quote_count', 0) or 0,
+        'view_count': getattr(tweet, 'view_count', None),
+        'bookmark_count': getattr(tweet, 'bookmark_count', 0) or 0,
+    }
+
+
+async def _search_tweets_twikit(query: str, count: int = 5) -> List[TweetData]:
     async def _do():
         client = await _get_twikit_client()
         tweets = await client.search_tweet(query, product='Latest')
-        results = []
+        results: List[TweetData] = []
         for t in tweets[:count]:
             results.append({
                 "id": t.id,
                 "user": t.user.screen_name,
                 "text": t.text,
-                "created_at": t.created_at
+                "created_at": t.created_at,
+                "engagement": _extract_engagement(t)
             })
         return results
     return await _with_retry(_do)

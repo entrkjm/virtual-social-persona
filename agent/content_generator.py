@@ -158,11 +158,15 @@ class ContentGenerator:
             self.quip_pool = {
                 'agreement': ['인정', 'ㄹㅇ', '맞음'],
                 'impressed': ['오...', '와...'],
-                'casual': ['ㅋㅋ', 'ㅎㅎ', '음...'],
-                'food_related': ['조리겠습니다'],
-                'skeptical': ['음... 글쎄요', '...'],
+                'casual': ['ㅋㅋ', 'ㅎㅎ'],
+                'food_related': ['좋아요'],
+                'skeptical': ['글쎄요...', '...'],
                 'simple_answer': ['네', '아뇨']
             }
+
+        speech = getattr(self.persona, 'speech_style', {}) or {}
+        self.opener_pool = speech.get('opener_pool', [])
+        self.signature_phrases = speech.get('signature_phrases', [])
 
     def _load_style_configs(self):
         speech = self.persona.speech_style or {}
@@ -253,7 +257,7 @@ class ContentGenerator:
         if response_type == ResponseType.SHORT:
             return self._generate_short_reply(target_tweet, perception, context)
 
-        # LONG: TMI 모드 (요리 주제)
+        # LONG: TMI 모드 (전문 분야 주제)
         if response_type == ResponseType.LONG:
             return self._generate_long_reply(target_tweet, perception, context)
 
@@ -333,7 +337,7 @@ class ContentGenerator:
         perception: Dict,
         context: Dict
     ) -> str:
-        """LONG 응답 (100+자) - 요리 TMI 모드"""
+        """LONG 응답 (100+자) - 전문 분야 TMI 모드"""
         config = ContentConfig(
             mode=ContentMode.CHAT,
             min_length=80, max_length=140,
@@ -351,13 +355,13 @@ class ContentGenerator:
 - 상대방: @{target_tweet.get('user', '')}
 - 상대방 글: "{target_tweet.get('text', '')}"
 - 주제: {', '.join(perception.get('topics', []))}
-- 요리 관련도: 높음
+- 전문 분야 관련도: 높음
 
 ### 지시:
-요리사로서 전문적인 관점으로 자세히 답변하세요.
+{self.persona.identity}로서 전문적인 관점으로 자세히 답변하세요.
 - 80~140자로 작성
-- 요리 팁이나 디테일한 정보 포함
-- 열정적이지만 페르소나 말투 유지 (음..., ~거든요 등)
+- 전문 분야 팁이나 디테일한 정보 포함
+- 열정적이지만 페르소나 말투 유지
 - 한글만 사용
 """
             return llm_client.generate(prompt)
@@ -399,6 +403,9 @@ class ContentGenerator:
                     all_recent_keywords.update(extract_keywords(p))
                 banned_words = sorted(all_recent_keywords)[:15]
 
+                banned_openers = self.opener_pool[:5] if self.opener_pool else []
+                banned_openers_str = ' / '.join([f'"{o}"' for o in banned_openers]) if banned_openers else '없음'
+
                 anti_repetition = f"""
 ### ⚠️ 중복 방지 (매우 중요 - 반드시 지켜야 함):
 최근 내가 쓴 글들:
@@ -407,9 +414,8 @@ class ContentGenerator:
 **금지된 단어들** (최근 사용함, 절대 쓰지 마세요):
 {', '.join(banned_words)}
 
-**금지된 시작 패턴**:
-- "혼자 생각해봤거든요" / "문득" / "오늘 문득" / "갑자기"
-- "음... 오늘" / "음... 요즘"
+**금지된 시작 패턴** (다른 방식으로 시작하세요):
+{banned_openers_str}
 
 **작성 원칙**:
 1. 위 금지 단어를 하나도 쓰지 않기

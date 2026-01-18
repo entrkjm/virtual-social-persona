@@ -457,25 +457,56 @@ class BehaviorEngine:
             return "LIKE"
         return "LURK"
 
-    def decide_actions(self) -> Dict[str, bool]:
-        """각 행동을 독립 확률로 판단
+    def decide_actions(
+        self,
+        perception: Optional[Dict] = None,
+        tweet: Optional[Dict] = None
+    ) -> Dict[str, bool]:
+        """각 행동을 독립 확률로 판단 (관련도/인기도 기반 조정)
 
         - normal 모드: 페르소나 behavior.yaml 값 사용
         - test/aggressive 모드: mode_manager 오버라이드 값 사용
+        - perception/tweet 전달 시 관련도/인기도 기반 확률 조정
+
+        Args:
+            perception: perceive_tweet 결과 (relevance_to_cooking 등)
+            tweet: 트윗 데이터 (engagement 포함)
 
         Returns:
             {'like': bool, 'repost': bool, 'comment': bool}
         """
         if mode_manager.should_override_probabilities():
             mode_cfg = mode_manager.config
-            like_prob = mode_cfg.like_probability
-            repost_prob = mode_cfg.repost_probability
-            comment_prob = mode_cfg.comment_probability
+            base_like = mode_cfg.like_probability
+            base_repost = mode_cfg.repost_probability
+            base_comment = mode_cfg.comment_probability
         else:
             action_config = self.config.get('interaction_patterns', {}).get('independent_actions', {})
-            like_prob = action_config.get('like_probability', 0.30)
-            repost_prob = action_config.get('repost_probability', 0.10)
-            comment_prob = action_config.get('comment_probability', 0.05)
+            base_like = action_config.get('like_probability', 0.30)
+            base_repost = action_config.get('repost_probability', 0.10)
+            base_comment = action_config.get('comment_probability', 0.05)
+
+        # 관련도 기반 조정 (0.3 ~ 1.0)
+        relevance = perception.get('relevance_to_cooking', 0.5) if perception else 0.5
+        relevance_factor = 0.3 + (relevance * 0.7)
+
+        # 인기도 기반 조정 (engagement)
+        engagement = tweet.get('engagement', {}) if tweet else {}
+        likes = engagement.get('favorite_count', 0)
+        retweets = engagement.get('retweet_count', 0)
+        # 20개 기준 정규화, 최소 0.5
+        popularity_factor = min(1.0, 0.5 + (likes + retweets * 2) / 40)
+
+        # 최종 확률 계산
+        like_prob = base_like * relevance_factor
+        # repost는 관련도 + 인기도 둘 다 반영 (더 엄격)
+        repost_prob = base_repost * relevance_factor * popularity_factor
+        # comment는 관련도만 반영
+        comment_prob = base_comment * relevance_factor
+
+        # repost 최소 관련도 임계값 (0.4 미만이면 repost 안 함)
+        if relevance < 0.4:
+            repost_prob = 0
 
         return {
             'like': random.random() < like_prob,
