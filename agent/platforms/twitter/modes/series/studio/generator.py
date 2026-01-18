@@ -48,3 +48,46 @@ class ImageGenerator:
         except Exception as e:
             print(f"[ImageGenerator] Generation Error: {e}")
             return []
+
+    def create_dynamic_prompts(self, topic: str, context_str: str, prompt_guide: dict) -> List[str]:
+        """LLM을 사용하여 4개의 각기 다른 연출 프롬프트 생성"""
+        from core.llm import llm_client
+        import json
+
+        guide_json = json.dumps(prompt_guide, indent=2, ensure_ascii=False)
+        
+        prompt = f"""
+You are an expert Food Photographer & Art Director.
+Generate 4 DISTINCT prompt variations for the main subject: "{topic}".
+Current Situation: {context_str}
+
+Reference the following Guide strictly to build "Photorealistic" prompts:
+{guide_json}
+
+REQUIREMENTS:
+1. Create 4 different concepts (e.g., Candid, Cinematic/Dark, Macro/Detail, Overhead).
+2. Incorporate the "Dynamic State" and "Imperfections" keywords naturally.
+3. OUTPUT FORMAT: valid JSON list of strings only. No other text.
+
+Example Output:
+[
+  "Candid shot of steaming hot Kimchi Stew, 45-degree angle, natural window light...",
+  "Overhead view of Kimchi Stew ingredients, messy table, flour dusting...",
+  ...
+]
+"""
+        try:
+            response = llm_client.generate(prompt, model=settings.GEMINI_PRO_MODEL)
+            clean_res = response.strip()
+            if clean_res.startswith('```'):
+                clean_res = clean_res.split('```')[1]
+            if clean_res.startswith('json'):
+                clean_res = clean_res[4:]
+            
+            prompts = json.loads(clean_res)
+            return prompts[:4] if isinstance(prompts, list) else []
+            
+        except Exception as e:
+            print(f"[ImageGenerator] Dynamic Prompt Logic Failed: {e}")
+            # Fallback
+            return [f"Professional photo of {topic}, realistic food photography, 8k" for _ in range(4)]

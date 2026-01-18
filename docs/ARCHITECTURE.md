@@ -17,6 +17,11 @@
 │              ▼               ▼               ▼                       │
 │      scout_timeline    check_mentions   post_tweet                   │
 │      (타임라인 정찰)     (멘션 확인)      (독립 글)                    │
+│                        │               │                             │
+│              ┌─────────┴────────────┐  │                             │
+│              ▼                      ▼  ▼                             │
+│        [Social Mode]          [Casual Mode]                          │
+│        [Series Mode]          [Learning Mode]                        │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -97,7 +102,7 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│  ContentGenerator                                                 │
+│  ContentGenerator (Unified)                                       │
 │  ├─ generate_reply() / generate_post()                            │
 │  │                                                                │
 │  ├─ _validate_and_regenerate() (최대 3회)                          │
@@ -208,42 +213,38 @@ Core (핵심) → 영구 보존, 페르소나 통합
 ┌────────────────────────────────────────────────────────────────────┐
 │  agent/                                                            │
 │  ├── bot.py                # SocialAgent (메인 워크플로우)           │
-│  ├── behavior_engine.py    # 확률 기반 행동 결정                     │
-│  ├── interaction_intelligence.py  # LLM 분석/판단                   │
-│  ├── relationship_manager.py      # 유저 관계 추적                   │
-│  ├── persona_loader.py     # YAML 페르소나 로딩                      │
-│  ├── content_generator.py  # 콘텐츠 생성 + 검증 + 리뷰               │
-│  ├── pattern_tracker.py    # 말투 패턴 추적 (3-Layer)                │
-│  ├── follow_engine.py      # 팔로우 판단 엔진                        │
-│  ├── json_memory.py        # 레거시 JSON 메모리 (v1)                 │
+│  ├── core/                 # 플랫폼 독립 로직                        │
+│  │   ├── behavior_engine.py                                        │
+│  │   ├── content_generator.py                                      │
+│  │   └── interaction_intelligence.py                               │
+│  ├── memory/               # 동적 메모리 시스템 (DB, Session)        │
+│  ├── knowledge/            # 지식 시스템                             │
+│  ├── persona/              # 페르소나 로딩 및 관리                   │
 │  │                                                                 │
-│  ├── memory/               # 동적 메모리 시스템 (v2)                  │
-│  │   ├── database.py       # SQLite 스키마 + CRUD                   │
-│  │   ├── vector_store.py   # Chroma + Gemini Embedding              │
-│  │   ├── inspiration_pool.py  # 영감 저장소                          │
-│  │   ├── tier_manager.py   # 티어 승격/강등                          │
-│  │   └── consolidator.py   # 주기적 정리                             │
+│  ├── platforms/            # [NEW] 플랫폼별 구현                     │
+│  │   └── twitter/                                                  │
+│  │       ├── modes/        # Casual/Social/Series 모드 구현          │
+│  │       └── learning/     # 트렌드 학습 구현                        │
 │  │                                                                 │
-│  └── posting/                                                      │
-│      └── trigger_engine.py # 글쓰기 발현 트리거                       │
-│                                                                    │
-├── actions/                                                         │
-│   ├── social.py            # Twitter API (Twikit) + follow 기능      │
-│   └── trends.py            # 트렌드 수집                             │
-│                                                                    │
-├── core/                                                            │
+│  actions/                  # (Legacy - to be removed)              │
+│  core/                                                             │
 │   └── llm.py               # 멀티 LLM 클라이언트                      │
 │                            # (Gemini, OpenAI, Anthropic)            │
 │                                                                    │
-└── config/                                                          │
-    ├── settings.py          # 환경변수 + 설정                          │
-    └── personas/            # 페르소나 폴더                            │
-        └── chef_choi/       # 페르소나별 독립 폴더                      │
-            ├── persona.yaml       # 페르소나 정의 + pattern_registry  │
-            ├── behavior.yaml      # 행동 설정 + follow_behavior       │
-            ├── relationships.yaml # 관계 정의                         │
-            ├── prompt.txt         # 시스템 프롬프트                    │
-            └── rules.txt          # 소통 규칙                         │
+│  config/                                                           │
+│     ├── settings.py          # 환경변수 + 설정                          │
+│     └── personas/            # 페르소나 폴더                            │
+│         └── chef_choi/       # 페르소나별 독립 폴더                     │
+│             ├── identity.yaml       # 핵심 정체성                       │
+│             ├── speech_style.yaml   # 말투 패턴                        │
+│             ├── mood.yaml           # 기분 & 스케줄                     │
+│             ├── core_relationships.yaml # 핵심 관계                    │
+│             ├── prompt.txt         # 시스템 프롬프트                    │
+│             └── platforms/          # 플랫폼 설정                       │
+│                 └── twitter/                                          │
+│                     ├── config.yaml # 제약 사항                        │
+│                     └── modes/      # 모드별 config.yaml + style.yaml  │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 ---

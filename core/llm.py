@@ -13,7 +13,7 @@ class BaseLLMClient(ABC):
     """LLM 클라이언트 추상 클래스"""
 
     @abstractmethod
-    def generate(self, prompt: str, system_prompt: str = "") -> str:
+    def generate(self, prompt: str, system_prompt: str = "", model: Optional[str] = None) -> str:
         """텍스트 생성"""
         pass
 
@@ -58,15 +58,16 @@ class GeminiClient(BaseLLMClient):
         self.backend = "vertex_ai"
         print(f"[VERTEX AI] initialized (project={settings.GCP_PROJECT_ID})")
 
-    def generate(self, prompt: str, system_prompt: str = "") -> str:
+    def generate(self, prompt: str, system_prompt: str = "", model: Optional[str] = None) -> str:
         if not self.client:
             return "Error: LLM not initialized."
 
         full_prompt = f"{system_prompt}\n\nUser Input:\n{prompt}" if system_prompt else prompt
+        target_model = model or self.model_name
 
         try:
             response = self.client.models.generate_content(
-                model=self.model_name,
+                model=target_model,
                 contents=full_prompt
             )
             return response.text
@@ -97,7 +98,7 @@ class OpenAIClient(BaseLLMClient):
             print("[OPENAI] openai package not installed")
             self.client = None
 
-    def generate(self, prompt: str, system_prompt: str = "") -> str:
+    def generate(self, prompt: str, system_prompt: str = "", model: Optional[str] = None) -> str:
         if not self.client:
             return "Error: OpenAI not initialized."
 
@@ -108,7 +109,7 @@ class OpenAIClient(BaseLLMClient):
             messages.append({"role": "user", "content": prompt})
 
             response = self.client.chat.completions.create(
-                model=self.model_name,
+                model=model or self.model_name,
                 messages=messages
             )
             return response.choices[0].message.content
@@ -139,13 +140,13 @@ class AnthropicClient(BaseLLMClient):
             print("[ANTHROPIC] anthropic package not installed")
             self.client = None
 
-    def generate(self, prompt: str, system_prompt: str = "") -> str:
+    def generate(self, prompt: str, system_prompt: str = "", model: Optional[str] = None) -> str:
         if not self.client:
             return "Error: Anthropic not initialized."
 
         try:
             response = self.client.messages.create(
-                model=self.model_name,
+                model=model or self.model_name,
                 max_tokens=1024,
                 system=system_prompt if system_prompt else "",
                 messages=[{"role": "user", "content": prompt}]

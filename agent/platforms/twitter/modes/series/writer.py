@@ -4,6 +4,7 @@ Content Writer
 """
 from typing import Dict, List
 from core.llm import llm_client
+from config.settings import settings
 from agent.persona.persona_loader import PersonaConfig
 
 class ContentWriter:
@@ -28,7 +29,7 @@ class ContentWriter:
         
         # LLM 호출
         print(f"[ContentWriter] Generating content for '{topic}' ({series_name})...")
-        content = llm_client.generate(user_prompt, system_prompt)
+        content = llm_client.generate(user_prompt, system_prompt, model=settings.GEMINI_PRO_MODEL)
         
         return content
 

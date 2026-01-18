@@ -36,16 +36,14 @@ Scout → Perceive → Behavior → Judge → Action → Follow
 ```
 agent/                    # Brain
   bot.py                  # 메인 워크플로우
-  content_generator.py    # 콘텐츠 생성 + 검증 + 리뷰
-  pattern_tracker.py      # 말투 패턴 추적 (3-Layer)
-  follow_engine.py        # 팔로우 판단 엔진
-  persona_loader.py       # 페르소나 로딩
-  memory/                 # 동적 메모리 시스템
-  posting/                # 글쓰기 트리거
-
-actions/                  # Hands
-  social.py               # Twitter API (Twikit) + follow 기능
-  trends.py               # 트렌드 수집
+  core/                   # 플랫폼 독립 로직 (8개 모듈)
+  memory/                 # 메모리 시스템 (DB, Vector, Session)
+  knowledge/              # 지식 시스템
+  persona/                # 페르소나 로딩 및 관리
+  platforms/              # 플랫폼별 구현
+    twitter/              # Twitter 플랫폼
+      modes/              # 실행 모드 (Casual/Social/Series)
+      learning/           # 트렌드 학습
 
 core/                     # Heart
   llm.py                  # 멀티 LLM (Gemini, OpenAI, Anthropic)
@@ -54,12 +52,16 @@ config/                   # Settings
   active_persona.yaml     # 활성 페르소나 지정
   personas/               # 페르소나 폴더
     chef_choi/            # 셰프 최강록
-      persona.yaml        # 설정 + pattern_registry
-      behavior.yaml       # 행동 확률 + follow_behavior
-      relationships.yaml  # 관계도
+      identity.yaml       # 핵심 정체성
+      speech_style.yaml   # 말투 패턴
+      mood.yaml           # 기분 및 스케줄
+      core_relationships.yaml # 핵심 관계
       prompt.txt          # 시스템 프롬프트
-      rules.txt           # 규칙
-    _template/            # 새 페르소나 템플릿
+      platforms/          # 플랫폼별 설정
+        twitter/
+          config.yaml     # 플랫폼 제약
+          step_schedule.yaml # 행동 비중
+          modes/          # 모드별 설정 (config.yaml + style.yaml)
 
 data/                     # Runtime Data
   memory.db               # SQLite (에피소드, 영감, 메모리)

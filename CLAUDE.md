@@ -100,23 +100,22 @@ core/                           # 1개 LLM 클라이언트 모듈
 
 data/                           # 런타임 데이터 (페르소나별)
 
-personas/                       # 페르소나 설정 (14개 YAML 파일)
+personas/                       # 페르소나 설정 (계층 구조)
 ├── _template/                  # 페르소나 템플릿
 └── chef_choi/                  # 활성 페르소나
-    ├── persona.yaml            # 정체성 + pattern_registry + speech_style + quip_pool
-    ├── behavior.yaml           # 행동 확률 + time_keywords + mood_descriptions
-    ├── relationships.yaml      # 관계도
+    ├── identity.yaml            # [NEW] 핵심 정체성 (이름, 도메인, 성격)
+    ├── speech_style.yaml        # [NEW] 말투 패턴 & 시그니처
+    ├── mood.yaml                # [NEW] 기분 & 스케줄
+    ├── core_relationships.yaml  # [NEW] 핵심 관계
     ├── prompt.txt              # 시스템 프롬프트
-    ├── rules.txt               # 소통 규칙
-    └── platforms/
+    └── platforms/              # [NEW] 플랫폼별 분리
         └── twitter/
-            ├── platform.yaml   # Twitter 전용 설정
-            └── modes/
-                ├── casual/style.yaml
-                ├── series/     # 4개 YAML 파일 (시리즈 모드)
-                └── social/
-                    ├── behavior.yaml
-                    └── speech_style.yaml
+            ├── config.yaml      # 플랫폼 제약 & 문자 규칙
+            ├── step_schedule.yaml # 활동 비중 (scout/mentions/post)
+            └── modes/          # 모드 통합 (config+style)
+                ├── casual/     # config.yaml (trigger) + style.yaml (post)
+                ├── series/     # config.yaml (schedule) + style.yaml (prompts)
+                └── social/     # config.yaml (strategy) + style.yaml (reply)
 
 platforms/                     # [레거시] 4개 플랫폼 모듈
 └── twitter/                   # 오래된 구현 (삭제 예정)
@@ -344,36 +343,32 @@ comment_prob = base * relevance_factor
 ### 폴더 구조
 ```
 config/active_persona.yaml              # 현재 활성 페르소나 지정
-personas/                             # 페르소나 설정 (14개 YAML 파일)
+personas/                             # 페르소나 설정 (계층 구조)
 ├── _template/                         # 페르소나 템플릿
 └── chef_choi/                         # 활성 페르소나
-    ├── persona.yaml                   # 정체성 + pattern_registry + speech_style + quip_pool
-    ├── behavior.yaml                  # 행동 확률 + time_keywords + mood_descriptions
-    ├── relationships.yaml             # 관계도
+    ├── identity.yaml                  # 핵심 정체성
+    ├── speech_style.yaml              # 말투 패턴
+    ├── mood.yaml                      # 기분 & 스케줄
+    ├── core_relationships.yaml        # 핵심 관계
     ├── prompt.txt                     # 시스템 프롬프트
-    ├── rules.txt                      # 소통 규칙
     └── platforms/
         └── twitter/
-            ├── platform.yaml          # Twitter 전용 설정
+            ├── config.yaml            # 플랫폼 제약
+            ├── step_schedule.yaml     # 활동 비중
             └── modes/
-                ├── casual/style.yaml   # 캐주얼 모드 스타일
-                ├── series/            # 4개 YAML 파일 (시리즈 모드)
-                │   ├── planner.yaml   # 시리즈 정의
-                │   ├── writer.yaml    # 시리즈 프롬프트
-                │   └── studio.yaml   # 이미지 생성 설정
-                └── social/
-                    ├── behavior.yaml  # 소셜 인터랙션 규칙
-                    └── speech_style.yaml # 소셜 스타일
+                ├── casual/            # config.yaml + style.yaml
+                ├── series/            # config.yaml + style.yaml
+                └── social/            # config.yaml + style.yaml
 ```
 
 ### 페르소나 이식성
 **페르소나 폴더 복사 = 완전 독립 에이전트**
 
 모든 페르소나 종속 설정이 폴더 내에 포함:
-- `persona.yaml`: 정체성 (이름, 키워드, 말투, quip_pool)
-- `behavior.yaml`: 행동 패턴 (time_keywords, mood_descriptions, 확률)
-- 모드별 설정: 각 콘텐츠 생성 모드별 전용 설정
-- 하드코딩 없음 → 코드 수정 없이 페르소나 교체 가능
+- `identity.yaml`: 정체성 (이름, 키워드, 도메인)
+- `speech_style.yaml`: 말투, 시그니처, 패턴 레지스트리
+- `mood.yaml`: 시간대별 기분, 활동 스케줄
+- `platforms/`: 플랫폼별 제약 및 모드별 설정 (Config + Style 패턴)
 
 ```bash
 # 새 페르소나 생성

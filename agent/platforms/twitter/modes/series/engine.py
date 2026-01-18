@@ -29,8 +29,8 @@ class SeriesEngine:
         }
 
     def get_enabled_platforms(self) -> List[str]:
-        # planner.yaml에 설정이 있고 enabled인 경우 활성 플랫폼으로 간주
-        return [p for p, cfg in self.config.items() if cfg.get('planner', {}).get('enabled', True)]
+        # config.yaml에 설정이 있고 enabled인 경우 활성 플랫폼으로 간주
+        return [p for p, cfg in self.config.items() if cfg.get('config', {}).get('enabled', True)]
 
     def is_due(self, platform: str, series_id: str) -> bool:
         """
@@ -38,8 +38,8 @@ class SeriesEngine:
         frequency + time_variance 고려
         """
         platform_config = self.config.get(platform, {})
-        planner_config = platform_config.get('planner', {})
-        series_list = planner_config.get('series', [])
+        series_config = platform_config.get('config', {})
+        series_list = series_config.get('series', [])
         series = next((s for s in series_list if s['id'] == series_id), None)
         
         if not series:
@@ -78,8 +78,8 @@ class SeriesEngine:
         if not platform_config:
             return None
             
-        planner_config = platform_config.get('planner', {})
-        series_list = planner_config.get('series', [])
+        series_config = platform_config.get('config', {})
+        series_list = series_config.get('series', [])
         candidates = []
         for s in series_list:
             if self.is_due(platform, s['id']):
@@ -106,47 +106,73 @@ class SeriesEngine:
             
         topic = plan['topic']
         
-        # 2. 콘텐츠 생성 (Writer) - writer.yaml에서 해당 시리즈의 프롬프트 로드
-        writer_config = self.config.get(platform, {}).get('writer', {})
+        # 2. 콘텐츠 생성 (Writer) - style.yaml에서 해당 시리즈의 프롬프트 로드
+        writer_config = self.config.get(platform, {}).get('style', {})
         series_writer_prompt = writer_config.get('series_prompts', {}).get(series_id, {})
         
         # template 필드를 writer_prompt로 대체하여 전달
         content = self.content_writer.write(series_name, topic, series_writer_prompt)
         
-        # 3. 이미지 생성 (Studio) - studio.yaml 활용
+        # 3. 이미지 생성 (Dynamic Multi-Prompt)
         studio_config = self.config.get(platform, {}).get('studio', {})
-        images = []
-        image_prompt_tmpl = studio_config.get('image_prompts', {}).get(series_id)
+        prompt_guide = studio_config.get('prompt_guide', {})
         
-        if image_prompt_tmpl:
-            prompt = image_prompt_tmpl.replace('{topic}', topic)
-            print(f"[SeriesEngine] Generating images for prompt: {prompt[:30]}...")
+        # Context Injection (Season, Time)
+        now = datetime.now()
+        season = self._get_season(now.month)
+        time_of_day = "Morning" if 6 <= now.hour < 12 else "Afternoon" if 12 <= now.hour < 18 else "Evening"
+        context_str = f"Season: {season}, Time: {time_of_day}, Series: {series_name}"
+        
+        images = []
+        selected_index = 0
+        prompts = []
+
+        if prompt_guide:
+            # A. Create Dynamic Prompts
+            print(f"[SeriesEngine] Creating dynamic image prompts for: {topic}")
+            prompts = self.generator.create_dynamic_prompts(topic, context_str, prompt_guide)
             
-            # A. Generate
-            candidates = self.generator.generate(prompt, count=4)
+            # B. Generate Images (Parallel-ish) in loop
+            candidates = []
+            for i, p in enumerate(prompts):
+                print(f"  > Prompt {i+1}: {p[:40]}...")
+                # generator.generate returns list, we take the first/only one in this call pattern
+                generated_batch = self.generator.generate(p, count=1) 
+                if generated_batch:
+                    candidates.append(generated_batch[0])
+                    # Save candidate
+                    self.archiver.save_asset(series_id, topic, f"candidate_{i}.png", generated_batch[0])
             
             if candidates:
-                # B. Save Candidates
-                for i, img_bytes in enumerate(candidates):
-                    self.archiver.save_asset(series_id, topic, f"candidate_{i+1}.png", img_bytes)
+                # 4. Review & Select (Reviewer)
+                from agent.platforms.twitter.modes.series.reviewer import SeriesReviewer
+                reviewer = SeriesReviewer()
                 
-                # C. Critique - studio.yaml의 critic 가이드 사용
+                # Retrieve Review Criteria from studio.yaml
                 critic_config = studio_config.get('critic', {})
-                art_director_prompt = critic_config.get('system_prompt', "You are an expert Art Director.")
-                criteria = critic_config.get('criteria', "Appetizing, Realistic, High Quality")
-
-                result = self.critic.evaluate(candidates, topic, criteria, art_director_prompt)
-                best_idx = result.get('selected_index', 0)
+                review_criteria = critic_config.get('criteria', "Authenticity, Realism")
                 
-                # D. Finalize
-                final_bytes = candidates[best_idx]
-                final_path = self.archiver.save_asset(series_id, topic, "final.png", final_bytes)
-                images.append(final_path)
+                print("[SeriesEngine] Reviewing content (Text + Image)...")
+                refined_text, best_idx, review_meta = reviewer.review_content(
+                    draft_text=content,
+                    image_prompts=prompts,
+                    criteria=review_criteria
+                )
                 
-                plan['image_critique'] = result
-                print(f"[SeriesEngine] Image selected (idx={best_idx}): {final_path}")
+                # Apply refined text
+                content = refined_text
+                selected_index = best_idx
+                
+                # Save Final Image
+                if 0 <= selected_index < len(candidates):
+                    final_bytes = candidates[selected_index]
+                    final_path = self.archiver.save_asset(series_id, topic, "final.png", final_bytes)
+                    images.append(final_path)
+                    print(f"[SeriesEngine] Selected Image {selected_index}: {final_path}")
+                
+                plan['review_result'] = review_meta
             else:
-                print("[SeriesEngine] Image generation returned no results.")
+                print("[SeriesEngine] No images generated.")
 
         # 4. 게시 (Adapter)
         adapter = self.adapters.get(platform)
@@ -171,3 +197,9 @@ class SeriesEngine:
             print(f"[SeriesEngine] Published & Archived: {result}")
             
         return result
+
+    def _get_season(self, month: int) -> str:
+        if 3 <= month <= 5: return "Spring"
+        if 6 <= month <= 8: return "Summer"
+        if 9 <= month <= 11: return "Autumn"
+        return "Winter"
