@@ -29,13 +29,14 @@ Scout → Perceive → Behavior → Judge → Action → Follow
 | Action | `actions/social.py` | Twitter API 호출 (액션 지연 적용) |
 | Follow | `follow_engine.py` | 점수 기반 팔로우 판단 + 지연 실행 |
 
-## 3-Layer Intelligence
+## 4-Layer Intelligence
 
 | Layer | 소스 | 용도 |
 |-------|------|------|
 | Core | `persona.yaml` | 페르소나 본질 (요리사 정체성) |
-| Curiosity | `memory.py` | 최근 관심사 (자동 학습/감쇠) |
-| Trends | `trends.py` | 실시간 트위터 트렌드 |
+| Curiosity | `json_memory.py` | 최근 관심사 (자동 학습/감쇠, 소스 추적) |
+| Knowledge | `knowledge_base.py` | 트렌드 컨텍스트 (요약/관련도/내 관점) |
+| Trends | `trends.py` | 실시간 트위터 트렌드 → Knowledge로 학습
 
 ## Key Components
 
@@ -47,6 +48,7 @@ Scout → Perceive → Behavior → Judge → Action → Follow
 | `agent/content_generator.py` | chat/post 스타일 분리 콘텐츠 생성 + 검증 + LLM 리뷰 |
 | `agent/pattern_tracker.py` | 3-Layer 말투 패턴 추적 (signature/frequent/filler/contextual) |
 | `agent/topic_selector.py` | 가중치 기반 토픽 선택 (core/time/curiosity/trends/inspiration) |
+| `agent/knowledge_base.py` | 트렌드/키워드 컨텍스트 학습 (요약, 관련도, 내 관점) |
 | `agent/activity_scheduler.py` | 사람다운 휴식 패턴 (수면/시간대별 활동/랜덤 휴식/오프데이) |
 | `agent/mode_manager.py` | 모드 시스템 (normal/test/aggressive) + step 확률 관리 |
 | `agent/follow_engine.py` | 점수 기반 팔로우 판단 + 지연 큐 |
@@ -425,6 +427,11 @@ quip_pool:
 - Activity Scheduler: 시간대별 활동 강도로 step 간격 동적 조절
 - Mode Manager: 226 에러 시 자동 안전 모드 전환
 - TopicSelector: 가중치 기반 토픽 선택 (core=1.0, time=1.2, curiosity=2.0, inspiration=2.5, trends=1.5)
+- **Knowledge Base**: 트렌드 키워드 조사 후 컨텍스트 저장 (24h 만료)
+  - 트렌드 수집 시 자동 학습 (`trends.py` → `knowledge_base.learn_topic()`)
+  - 포스팅 시 관련 지식 조회 → LLM 프롬프트에 배경지식 추가
+  - 관련도 기반 필터링 (`min_relevance=0.2`)
+- **Curiosity 확장**: count뿐 아니라 first_seen, last_seen, sources 추적
 
 ## Architecture & Future Plans
 
