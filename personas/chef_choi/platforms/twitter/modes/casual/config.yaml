@@ -1,0 +1,15 @@
+# Twitter Casual Mode - Configuration
+
+# 포스팅 트리거 타입
+trigger_types:
+  flash:
+    impact_threshold: 0.9      # 강렬한 경험
+  mood_burst:
+    impact_threshold: 0.8      # 기분 좋음
+  random_recall:
+    impact_threshold: 0.0      # 갑작스런 회상
+
+# 제약 사항
+constraints:
+  min_interval_minutes: 60     # 최소 포스팅 간격
+  max_posts_per_day: 5         # 하루 최대 독립 포스팅 수

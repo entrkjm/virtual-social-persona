@@ -15,17 +15,32 @@ step() 루프 (ModeManager에 따라 가변 간격)
     ↓
 scout_timeline (80%) | check_mentions (15%) | post_tweet (5%)
     ↓
-Scout → Perceive → Behavior → Judge → Action → Follow
+Content Generation Modes:
+├─ Social Mode (답글/멘션 처리) → 6-Stage Pipeline
+├─ Casual Mode (독립 포스팅) → Trigger Engine + Post Generator
+├─ Series Mode (콘텐츠 시리즈) → Planner → Writer → Studio → Archiver
+└─ Learning Mode (트렌드 학습) → Trend Learner
 ```
 
-### 6-Stage Pipeline
+### Mode-Based Architecture (Platform-First)
+
+| Mode | 목적 | 컴포넌트 | 실행 조건 |
+|------|------|----------|----------|
+| **Social** | 답글/멘션/관계 | `reply_generator.py`, `follow_engine.py` | scout/mentions 트리거 |
+| **Casual** | 독립 포스팅 | `trigger_engine.py`, `post_generator.py` | 내부 상태 기반 발동 |
+| **Series** | 콘텐츠 시리즈 | `engine.py`, `planner.py`, `writer.py`, `studio/` | 스케줄링된 포스팅 |
+| **Learning** | 트렌드/지식 습득 | `trend_learner.py` | 주기적 트렌드 수집 |
+
+### 6-Stage Pipeline (Interaction Backbone)
+
+Social Mode 내에서 실행되는 상호작용 백본:
 
 | Stage | 담당 | 역할 |
 |-------|------|------|
 | Scout | `agent/bot.py` | 4-Layer 키워드로 트윗 검색 |
-| Perceive | `agent/core/interaction_intelligence.py` | LLM으로 트윗 의미/감정/의도 분석 |
+| Perceive | `agent/core/interaction_intelligence.py` | LLM으로 트윗 의미/감정/의도 분석 + ResponseType 결정 |
 | Behavior | `agent/core/behavior_engine.py` | 확률 기반 사람다운 판단 (기분/현타/피로) + 워밍업/지연/버스트 방지 |
-| Judge | `agent/core/content_generator.py` | 콘텐츠 생성 + 패턴 검증 + 리뷰 |
+| Judge | `agent/core/content_generator.py` | ResponseType 기반 콘텐츠 생성 + QUIP Pool + 검증 |
 | Action | `platforms/twitter/social.py` | Twitter API 호출 (액션 지연 적용) |
 | Follow | `agent/core/follow_engine.py` | 점수 기반 팔로우 판단 + 지연 실행 |
 
@@ -41,48 +56,74 @@ Scout → Perceive → Behavior → Judge → Action → Follow
 ## Folder Structure
 
 ```
-agent/
-├── bot.py                      # 메인 진입점, SocialAgent 클래스
-├── core/                       # 플랫폼 독립 로직
-│   ├── behavior_engine.py      # 확률 기반 행동 판단 + HumanLikeController
-│   ├── follow_engine.py        # 팔로우 판단 + 지연 큐
-│   ├── content_generator.py    # 콘텐츠 생성 + 검증 + LLM 리뷰
-│   ├── interaction_intelligence.py  # 트윗 분석 + ResponseType 결정
-│   ├── mode_manager.py         # 모드 시스템 (normal/test/aggressive)
-│   ├── activity_scheduler.py   # 수면/휴식 패턴
-│   └── topic_selector.py       # 가중치 기반 토픽 선택
-├── memory/                     # 메모리 시스템
-│   ├── session.py              # 세션 메모리 (interactions, likes, curiosity)
-│   ├── database.py             # SQLite 장기 메모리
-│   ├── inspiration_pool.py     # 영감 풀
-│   ├── tier_manager.py         # 티어 관리 + 품질 경쟁
-│   ├── consolidator.py         # 메모리 정리
-│   └── vector_store.py         # ChromaDB 벡터 검색
-├── knowledge/                  # 세상 지식
-│   └── knowledge_base.py       # 트렌드/키워드 컨텍스트 학습
-├── persona/                    # 페르소나 관련
-│   ├── persona_loader.py       # YAML 로딩 (중앙 진입점)
-│   ├── pattern_tracker.py      # 말투 패턴 추적
-│   └── relationship_manager.py # 유저 관계 추적
-└── posting/
-    └── trigger_engine.py       # 포스팅 트리거
+virtual/
+├── _archive/                    # 레거시/제외된 코드
+│   ├── actions/                # 오래된 플랫폼 구현
+│   └── docs/                   # 오래된 문서
+├── actions/                    # [NEW] 현재 액션 (market_data.py만)
+├── agent/                      # 코어 에이전트 로직 (47개 파이썬 파일)
+│   ├── bot.py                  # 메인 진입점, SocialAgent 클래스
+│   ├── core/                   # 플랫폼 독립 로직 (8개 모듈)
+│   │   ├── behavior_engine.py  # 확률 기반 행동 판단 + HumanLikeController
+│   │   ├── content_generator.py # 콘텐츠 생성 + 검증 + LLM 리뷰
+│   │   ├── interaction_intelligence.py # 트윗 분석 + ResponseType 결정
+│   │   ├── mode_manager.py     # 모드 시스템 (normal/test/aggressive)
+│   │   ├── activity_scheduler.py # 수면/휴식 패턴
+│   │   └── topic_selector.py   # 가중치 기반 토픽 선택
+│   ├── memory/                 # 메모리 시스템 (8개 모듈)
+│   │   ├── session.py          # 세션 메모리 (interactions, likes, curiosity)
+│   │   ├── database.py         # SQLite 장기 메모리
+│   │   ├── inspiration_pool.py # 영감 풀
+│   │   ├── tier_manager.py     # 티어 관리 + 품질 경쟁
+│   │   ├── consolidator.py     # 메모리 정리
+│   │   └── vector_store.py     # ChromaDB 벡터 검색
+│   ├── knowledge/              # 세상 지식
+│   │   └── knowledge_base.py   # 트렌드/키워드 컨텍스트 학습
+│   ├── persona/                # 페르소나 관련 (4개 모듈)
+│   │   ├── persona_loader.py   # YAML 로딩 (중앙 진입점)
+│   │   ├── pattern_tracker.py  # 말투 패턴 추적
+│   │   └── relationship_manager.py # 유저 관계 추적
+│   └── platforms/              # [NEW 구조] 플랫폼별 로직
+│       └── twitter/            # 17개 Twitter 전용 모듈
+│           ├── learning/       # 1개 트렌드 학습기
+│           └── modes/          # [NEW] 모드 기반 아키텍처
+│               ├── casual/     # 2개 캐주얼 모듈
+│               ├── series/     # 6개 시리즈 모듈  
+│               └── social/     # 2개 소셜 모듈
 
-platforms/
-└── twitter/                    # Twitter 플랫폼
-    ├── social.py               # Twikit API (post, search, like, follow)
-    └── trends.py               # 트렌드 수집 + 지식 학습
+config/                         # 설정 관리
+├── active_persona.yaml          # 현재 활성 페르소나 지정
+└── settings.py                  # 종합 설정 + 환경변수
 
-core/
+core/                           # 1개 LLM 클라이언트 모듈
 └── llm.py                      # 멀티 LLM 클라이언트
 
-config/
-└── personas/                   # 페르소나별 설정
-    └── {name}/
-        ├── persona.yaml        # 정체성 + 말투
-        ├── behavior.yaml       # 행동 확률 + 시간대 설정
-        ├── relationships.yaml  # 관계도
-        ├── prompt.txt          # 시스템 프롬프트
-        └── rules.txt           # 소통 규칙
+data/                           # 런타임 데이터 (페르소나별)
+
+personas/                       # 페르소나 설정 (14개 YAML 파일)
+├── _template/                  # 페르소나 템플릿
+└── chef_choi/                  # 활성 페르소나
+    ├── persona.yaml            # 정체성 + pattern_registry + speech_style + quip_pool
+    ├── behavior.yaml           # 행동 확률 + time_keywords + mood_descriptions
+    ├── relationships.yaml      # 관계도
+    ├── prompt.txt              # 시스템 프롬프트
+    ├── rules.txt               # 소통 규칙
+    └── platforms/
+        └── twitter/
+            ├── platform.yaml   # Twitter 전용 설정
+            └── modes/
+                ├── casual/style.yaml
+                ├── series/     # 4개 YAML 파일 (시리즈 모드)
+                └── social/
+                    ├── behavior.yaml
+                    └── speech_style.yaml
+
+platforms/                     # [레거시] 4개 플랫폼 모듈
+└── twitter/                   # 오래된 구현 (삭제 예정)
+
+script/                        # 유틸리티 스크립트
+scripts/                       # 메인 스크립트 (백업, 마이그레이션)
+tests/                         # 테스트 파일
 ```
 
 ## Key Components
@@ -106,6 +147,21 @@ config/
 | `platforms/twitter/social.py` | Twikit 기반 Twitter API + follow 기능 |
 | `platforms/twitter/trends.py` | 트렌드 수집 + Knowledge 자동 학습 |
 | `core/llm.py` | 멀티 LLM 클라이언트 (Gemini, OpenAI, Anthropic) |
+
+### [NEW] Mode-Based Components
+
+| Mode | 컴포넌트 | 역할 |
+|------|----------|------|
+| **Casual** | `agent/platforms/twitter/modes/casual/trigger_engine.py` | 내부 상태 기반 포스팅 트리거 (flash/mood_burst/random_recall) |
+| **Casual** | `agent/platforms/twitter/modes/casual/post_generator.py` | 다양성 검증 + 반복 방지 독립 포스팅 생성 |
+| **Social** | `agent/platforms/twitter/modes/social/reply_generator.py` | ResponseType 기반 답글 생성 (QUIP/SHORT/NORMAL/LONG/PERSONAL) |
+| **Social** | `agent/platforms/twitter/modes/social/behavior_engine.py` | 모드 인식 행동 엔진 (향상된 관계 판단) |
+| **Series** | `agent/platforms/twitter/modes/series/engine.py` | 시리즈 콘텐츠 오케스트레이터 |
+| **Series** | `agent/platforms/twitter/modes/series/planner.py` | 토픽 큐레이션 + 스케줄링 |
+| **Series** | `agent/platforms/twitter/modes/series/writer.py` | 시리즈 전용 콘텐츠 생성 |
+| **Series** | `agent/platforms/twitter/modes/series/studio/` | 이미지 생성 + AI 비평 + 선택 |
+| **Series** | `agent/platforms/twitter/modes/series/archiver.py` | 시리즈 에피소드 기록 관리 |
+| **Learning** | `agent/platforms/twitter/learning/trend_learner.py` | 트렌드 키워드 컨텍스트 수집 |
 
 ## Behavior Engine
 
@@ -288,14 +344,26 @@ comment_prob = base * relevance_factor
 ### 폴더 구조
 ```
 config/active_persona.yaml              # 현재 활성 페르소나 지정
-config/personas/
-  chef_choi/                            # 페르소나별 독립 폴더
-    persona.yaml                        # 정체성 + pattern_registry + speech_style + quip_pool
-    behavior.yaml                       # 행동 확률 + time_keywords + mood_descriptions
-    relationships.yaml                  # 관계도
-    prompt.txt                          # 시스템 프롬프트
-    rules.txt                           # 소통 규칙
-  _template/                            # 새 페르소나 템플릿 (전체 스키마 포함)
+personas/                             # 페르소나 설정 (14개 YAML 파일)
+├── _template/                         # 페르소나 템플릿
+└── chef_choi/                         # 활성 페르소나
+    ├── persona.yaml                   # 정체성 + pattern_registry + speech_style + quip_pool
+    ├── behavior.yaml                  # 행동 확률 + time_keywords + mood_descriptions
+    ├── relationships.yaml             # 관계도
+    ├── prompt.txt                     # 시스템 프롬프트
+    ├── rules.txt                      # 소통 규칙
+    └── platforms/
+        └── twitter/
+            ├── platform.yaml          # Twitter 전용 설정
+            └── modes/
+                ├── casual/style.yaml   # 캐주얼 모드 스타일
+                ├── series/            # 4개 YAML 파일 (시리즈 모드)
+                │   ├── planner.yaml   # 시리즈 정의
+                │   ├── writer.yaml    # 시리즈 프롬프트
+                │   └── studio.yaml   # 이미지 생성 설정
+                └── social/
+                    ├── behavior.yaml  # 소셜 인터랙션 규칙
+                    └── speech_style.yaml # 소셜 스타일
 ```
 
 ### 페르소나 이식성
@@ -304,11 +372,12 @@ config/personas/
 모든 페르소나 종속 설정이 폴더 내에 포함:
 - `persona.yaml`: 정체성 (이름, 키워드, 말투, quip_pool)
 - `behavior.yaml`: 행동 패턴 (time_keywords, mood_descriptions, 확률)
+- 모드별 설정: 각 콘텐츠 생성 모드별 전용 설정
 - 하드코딩 없음 → 코드 수정 없이 페르소나 교체 가능
 
 ```bash
 # 새 페르소나 생성
-cp -r config/personas/_template config/personas/new_persona
+cp -r personas/_template personas/new_persona
 # active_persona.yaml 수정
 echo "active_persona: new_persona" > config/active_persona.yaml
 # 실행
@@ -343,14 +412,66 @@ speech_style:   # 콘텐츠 생성 스타일 분리
     endings: ["~임", "..."]
 ```
 
+### 모드별 설정 예시
+
+#### Casual Mode Style (`platforms/twitter/modes/casual/style.yaml`)
+```yaml
+casual_style:
+  tone: "스스로 생각하며 혼잣말처럼"
+  length_range: { min: 40, max: 200 }
+  triggers:
+    flash:
+      enabled: true
+      impact_threshold: 0.9
+    mood_burst:
+      enabled: true
+      impact_threshold: 0.8
+```
+
+#### Series Mode Planning (`platforms/twitter/modes/series/planner.yaml`)
+```yaml
+series:
+  - id: "world_braised"
+    name: "세계의 조림"
+    frequency: "2days"
+    time_variance: "2h"
+    curation:
+      enabled: true
+      search_query: "unique braised dishes around the world"
+      max_topics: 10
+    writing:
+      style: "설명적이고 전문가적인 톤"
+      length: { min: 200, max: 500 }
+```
+
+#### Social Mode Behavior (`platforms/twitter/modes/social/behavior.yaml`)
+```yaml
+social_behavior:
+  response_weights:
+    quip: 0.3        # 패턴 풀 사용 비중
+    short: 0.2       # 짧은 답글
+    normal: 0.4      # 표준 답글
+    long: 0.05       # 긴 전문가 답글
+    personal: 0.05    # 개인적 경험
+  relationship_bonus: 0.2  # 관계있는 사용자에게 더 적극적으로
+```
+
 ## External Dependencies
 
 | 라이브러리 | 용도 | 주의사항 |
 |-----------|------|---------|
-| `virtuals-game-sdk` | Agent 프레임워크 | 429 rate limit 빈번, retry 로직 필수 |
+| `game-sdk` | Virtuals Protocol G.A.M.E SDK | 429 rate limit 빈번, retry 로직 필수 |
 | `twikit` | Twitter 비공식 SDK | 쿠키 인증 필요 (auth_token, ct0) |
-| `google-generativeai` | Gemini LLM | API 키 필수 |
-| `chromadb` | 벡터 저장소 | **1.4.1+** 필수 (DB 마이그레이션 호환) |
+| `google-genai` | Gemini LLM | API 키 필수 |
+| `chromadb>=1.0.0` | 벡터 저장소 | **1.0.0+** 필수 (DB 마이그레이션 호환) |
+| `python-dotenv` | 환경변수 관리 | .env 파일 로딩 |
+| `requests` | HTTP 클라이언트 | API 호출용 |
+| `tweepy` | Twitter 공식 SDK (예비) | 현재는 twikit 사용 |
+
+### 의존성 변화
+- **실제**: 8개의 최소한의 의존성 (경량화)
+- **문서상**: 더 많은 라이브러리가 문서화됨
+- **핵심**: `game-sdk`, `twikit`, `google-genai`, `chromadb`가 주요 의존성 |
 
 ## DO NOT TOUCH
 
@@ -363,23 +484,102 @@ speech_style:   # 콘텐츠 생성 스타일 분리
 
 ## Mode System
 
+### Platform-First Mode Architecture
+
 `agent/core/mode_manager.py` + 환경변수 `AGENT_MODE`
 
-### Step 확률 (scout / mentions / post)
+### Execution Control Modes (normal/test/aggressive)
+
 | Mode | 간격 | Scout | Mentions | Post | 워밍업 | 수면 | 휴식 |
 |------|------|-------|----------|------|--------|------|------|
 | **normal** | 60-180s | 80% | 15% | 5% | 5스텝 | O | O |
 | **test** | 15-45s | 75% | 15% | 10% | 2스텝 | X | X |
 | **aggressive** | 8-20s | 70% | 15% | 15% | 0스텝 | X | X |
 
-### Action 확률 (like / repost / comment)
 | Mode | Like | Repost | Comment |
 |------|------|--------|---------|
 | **normal** | 페르소나 값 | 페르소나 값 | 페르소나 값 |
 | **test** | 45% | 45% | 12% |
 | **aggressive** | 60% | 60% | 18% |
 
-### 동작
+### Content Generation Modes
+
+#### 1. Casual Mode (독립 포스팅)
+**구성**: `trigger_engine.py`, `post_generator.py`
+
+**트리거 타입**:
+- `flash`: impact_threshold=0.9 (매우 강렬한 경험)
+- `flash_reinforced`: impact_threshold=0.8 (관심 재강화)
+- `mood_burst`: impact_threshold=0.8 (기분 좋은 순간)
+- `random_recall`: impact_threshold=0.0 (갑작스러운 회상)
+
+**핵심 기능**:
+- **다양성 검증**: 최근 포스팅 분석으로 반복 방지
+- **반복 제어**: 금지된 주제/표현 필터링
+- **길이 제약**: 설정 가능한 최소/최대 길이
+
+#### 2. Social Mode (답글/멘션)
+**구성**: `reply_generator.py`, `behavior_engine.py`
+
+**ResponseType 분기**:
+| Type | 조건 | LLM 호출 | 길이 |
+|------|------|----------|------|
+| **QUIP** | complexity=simple + quip_category!=none | ❌ 패턴 풀 | 1-15자 |
+| **SHORT** | complexity=simple + quip_category=none | ✅ 최소 | 15-50자 |
+| **NORMAL** | complexity=moderate | ✅ 표준 | 50-100자 |
+| **LONG** | cooking_rel≥0.7 + complex | ✅ 상세 | 80-140자 |
+| **PERSONAL** | 비전문가 회고 | ✅ 개인적 | 30-80자 |
+
+**QUIP Pool 예시**:
+```yaml
+quip_pool:
+  agreement: ["인정", "ㄹㅇ", "맞음"]
+  impressed: ["조리겠습니다", "이건 뭉근하게..."]
+  casual: ["ㅋㅋ", "ㅎㅎ", "음..."]
+  food_related: ["들기름 한바퀴", "이건 조려야됨"]
+```
+
+#### 3. Series Mode (콘텐츠 시리즈)
+**구성**: `engine.py`, `planner.py`, `writer.py`, `studio/`, `archiver.py`
+
+**워크플로우**:
+1. **Planning** → 토픽 큐레이션 + 스케줄링
+2. **Writing** → 시리즈 전용 프롬프트 + 톤
+3. **Studio** → 이미지 생성 (4개 후보) → AI 비평 → 선택
+4. **Archiving** → 에피소드 전체 기록 + 메타데이터
+
+**시리즈 설정 예시**:
+```yaml
+series:
+  - id: "world_braised"
+    name: "세계의 조림"
+    frequency: "2days"
+    time_variance: "2h"
+    curation:
+      enabled: true
+      search_query: "unique braised dishes around the world"
+```
+
+#### 4. Learning Mode (트렌드 학습)
+**구성**: `trend_learner.py`
+
+**기능**: 가벼운 트렌드 컨텍스트 수집 → `knowledge_base.py`로 전달
+
+### Mode Integration Flow
+
+```python
+# Main Loop (main.py)
+step_probs = mode_manager.get_step_probabilities(persona.behavior)
+
+if roll < step_probs['scout']:
+    social_agent.scout_and_respond()  # Social + 6-Stage Pipeline
+elif roll < step_probs['scout'] + step_probs['mentions']:
+    social_agent.check_mentions()     # Social + Reply Generator
+else:
+    social_agent.post_tweet_executable() # Casual + Series (scheduled)
+```
+
+### 동작 방식
 - **normal**: 페르소나 `behavior.yaml`의 `independent_actions` 값 그대로 사용 (프로덕션용)
 - **test/aggressive**: 모드별 고정 확률로 오버라이드 (개발용)
 - 226 에러 발생 시 aggressive → normal 자동 전환
@@ -618,10 +818,11 @@ theme: 반복 테마 (used ≥ 3)
 ### 현재 구조 (A: 오픈소스 배포용)
 
 ```
-config/personas/*.yaml    →  YAML 파일 로딩
-agent_memory.json         →  JSON 파일 저장
-.env                      →  환경변수 인증
-python main.py            →  단일 프로세스 실행
+config/active_persona.yaml      # 현재 활성 페르소나 지정
+personas/*.yaml               # YAML 파일 로딩
+agent_memory.json            # JSON 파일 저장
+.env                        # 환경변수 인증
+python main.py              # 단일 프로세스 실행
 ```
 
 **특징**: 1인 1프로세스, 로컬 실행, 페르소나 폴더 복사로 교체
@@ -640,11 +841,11 @@ python main.py            →  단일 프로세스 실행
 
 ```
 현재 (A)                          SaaS (B)
-─────────────────────────────────────────────────────
-config/personas/*.yaml     →     DB (personas 테이블)
+────────────────────────────────────────────────────
+personas/*.yaml            →     DB (personas 테이블)
 .env (Twitter 인증)        →     DB (encrypted credentials) + OAuth
 agent_memory.json          →     DB (memories 테이블, user_id FK)
-twitter_cookies.json       →     DB (sessions 테이블)
+data/posted_content.txt    →     DB (sessions 테이블)
 python main.py (1개)       →     Worker Pool (N개 프로세스)
 없음                       →     API 서버 (CRUD, 대시보드)
 없음                       →     Job Queue (Redis/Celery)
@@ -668,7 +869,7 @@ class PersonaProvider(ABC):
 
 class FileProvider(PersonaProvider):    # 현재
     def get_config(self, persona_id):
-        return yaml.load(f"config/personas/{persona_id}/...")
+        return yaml.load(f"personas/{persona_id}/...")
 
 class DBProvider(PersonaProvider):      # 나중에
     def get_config(self, persona_id):

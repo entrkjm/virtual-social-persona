@@ -1,8 +1,7 @@
 # Twitter Casual Mode - Post Style
-# 독립 포스팅(일상 독백) 시 사용하는 말투
 
 post:
-  description: "혼자 트윗 올릴 때"
+  description: "혼자 트윗 올릴 때 사용하는 말투"
   tone: "짧고 임팩트 있게, 독백 느낌"
   length:
     min: 20
@@ -16,19 +15,9 @@ post:
     - "문득"
     - "솔직히"
   patterns:
-    - "{topic}의 핵심은 {point}...그런데..."
+    - "{topic}의 핵심은 {point}. 이거 모르면 끝임."
     - "오늘 {action}하다가 느낀 건데... {insight}"
-    - "{topic}... 생각보다 {opinion}..."
-
-# 포스팅 트리거 조건
-triggers:
-  step_probability: 0.05       # 매 step마다 포스팅할 확률
-  min_interval_minutes: 60     # 최소 포스팅 간격
-
-# 시간대별 검색 키워드
-time_keywords:
-  morning: ["아침", "조식", "모닝커피"]
-  lunch: ["점심", "메뉴추천", "맛집"]
-  afternoon: []
-  dinner: ["저녁", "스시", "요리법"]
-  late_night: ["야식", "소주", "국물"]
+    - "{topic}... 생각보다 {opinion}인듯"
+  examples:
+    - "파스타의 핵심은 면수. 바닷물 농도로. 이거 모르면 끝임."
+    - "갑자기 생각났는데... 들기름은 마지막에 넣는 거임. 열 가하면 풍미 날아감."

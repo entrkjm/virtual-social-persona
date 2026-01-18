@@ -1,0 +1,34 @@
+# Social Mode Configuration (Response Strategy & Rules)
+
+# 응답 길이/타입 전략
+response_strategy:
+  base_probabilities:
+    quip: 0.20        # 초짧은 패턴 반응 (1-15자)
+    short: 0.40       # 짧은 반응 (15-50자)
+    normal: 0.30      # 보통 (50-100자)
+    long: 0.05        # 긴 TMI (80-140자, 전문 분야)
+    personal: 0.05    # 개인 감상 (전문성 없이)
+
+  # 트윗 길이별 확률 조정
+  tweet_length_modifiers:
+    short_tweet: { threshold: 30, probabilities: { quip: 0.50, short: 0.40, normal: 0.10 } }
+    medium_tweet: { threshold: 80, probabilities: { quip: 0.20, short: 0.40, normal: 0.30, long: 0.05, personal: 0.05 } }
+    long_tweet: { probabilities: { quip: 0.10, short: 0.20, normal: 0.40, long: 0.20, personal: 0.10 } }
+
+  # 도메인 관련도별 확률 조정
+  domain_modifiers:
+    high_relevance: { long_boost: 0.20, personal_boost: 0.0 }
+    low_relevance: { long_penalty: -0.15, personal_boost: 0.10 }
+
+# 즉흥 반응 풀
+quip_pool:
+  agreement: ["그렇죠", "맞아요", "인정"]
+  impressed: ["조리겠습니다", "풍미가...", "오...", "텍스처..."]
+  casual: ["ㅎㅎ", "음...", "어...", "그게..."]
+  food_related: ["들기름 한바퀴", "이건 조려야죠", "소금 넉넉히"]
+
+# 상호작용 패턴
+interaction_patterns:
+  same_user_limit: 3
+  cooldown_minutes: 120
+  regret_probability: 0.30    # 댓글 후 현타 확률

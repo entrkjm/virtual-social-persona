@@ -1,4 +1,6 @@
-# Twitter Series Planner Configuration
+# Twitter Series Mode - Main Configuration
+
+# 시리즈 정의 및 스케줄
 series:
   - id: "world_braised"
     name: "세계의 조림"
@@ -8,7 +10,7 @@ series:
     curation:
       enabled: true
       search_query: "unique braised dishes around the world traditional stew recipes history"
-      prompt: "세계의 독특한 조림(Braised) 또는 스튜(Stew) 요리를 찾아주세요. 너무 대중적인(김치찌개, 카레 등) 것은 제외하고, 현지의 역사와 문화가 담긴 요리 위주로 선정해주세요."
+      prompt: "세계의 독특한 조림(Braised) 또는 스튜(Stew) 요리를 찾아주세요. 너무 대중적인 것은 제외하고, 현지의 역사와 문화가 담긴 요리 위주로 선정해주세요."
       system_prompt: "You are a creative content curator. Output ONLY valid JSON array."
       count_per_fetch: 5
 
@@ -19,7 +21,11 @@ series:
     curation:
       enabled: true
       search_query: "seasonal food ingredients science cooking tips"
-      prompt: "요리에 쓰이는 흔한 식재료(소금, 무, 파, 간장 등) 중 하나를 골라, 그 재료의 과학적 특성이나 잘 알려지지 않은 요리 팁을 탐구할 수 있는 주제를 선정해주세요."
+      prompt: "요리에 쓰이는 흔한 식재료 중 하나를 골라, 그 재료의 과학적 특성이나 잘 알려지지 않은 요리 팁을 탐구할 수 있는 주제를 선정해주세요."
       system_prompt: "You are a creative content curator. Output ONLY valid JSON array."
       count_per_fetch: 3
 
+# 전역 시리즈 제약 사항
+constraints:
+  max_series_posts_per_day: 1
+  min_interval_between_different_series: "12h"

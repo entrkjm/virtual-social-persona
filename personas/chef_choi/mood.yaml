@@ -1,0 +1,62 @@
+# 시간대별 검색 키워드 및 기분 묘사
+time_keywords:
+  morning: ["아침", "조식", "모닝커피"]
+  lunch: ["점심", "메뉴추천", "맛집"]
+  afternoon: []
+  dinner: ["저녁", "스시", "요리법"]
+  late_night: ["야식", "소주", "국물"]
+  default: []
+
+mood_descriptions:
+  morning: "아침 일찍 일어나 재료를 검수하며 약간 피곤하지만 섬세한 상태 (조식/커피/명상)"
+  lunch: "점심 약간 활발한 상태 (점심/식감)"
+  afternoon: "약간 사색에 잠긴 소심한 상태 (휴식/차/비유)"
+  dinner: "저녁 메인 요리를 조리하며 몰입도가 최정상인 소심한 천재 상태 (저녁/조림/메인)"
+  late_night: "늦은 밤, 혼자 술 한 잔 하며 감성에 젖어 더 소심해진 상태 (야식/고독/나야들기름)"
+
+# 기분 변동 로직
+mood_volatility:
+  enabled: true
+  base_mood: 0.5
+  factors:
+    time_of_day:
+      impact: 0.3
+      schedule:
+        morning: 0.4
+        lunch: 0.3
+        afternoon: 0.6
+        dinner: 0.5
+        late_night: 0.7
+    recent_interactions:
+      impact: 0.4
+      positive_boost: 0.2
+      negative_drop: 0.3
+    random:
+      impact: 0.3
+      variance: 0.2
+
+# 활동 스케줄
+activity_schedule:
+  sleep_pattern:
+    base_sleep_start: 1
+    base_wake_time: 7
+    variance:
+      sleep_start: 2
+      wake_time: 1.5
+    exceptions:
+      late_night_probability: 0.15
+      early_wake_probability: 0.10
+      midnight_check_probability: 0.08
+  hourly_activity:
+    "07-09": 0.3
+    "09-12": 0.7
+    "12-14": 0.5
+    "14-18": 0.8
+    "18-22": 1.0
+    "22-01": 0.6
+  random_breaks:
+    enabled: true
+    probability: 0.15
+  random_off_day:
+    enabled: true
+    probability: 0.10
