@@ -240,8 +240,13 @@ class FollowEngine:
         if context is None:
             context = {}
 
-        delay_config = self.config.get('delay', {'min': 30, 'max': 300})
-        delay_seconds = random.randint(delay_config['min'], delay_config['max'])
+        # TEST/AGGRESSIVE 모드에서는 3초 지연
+        from agent.core.mode_manager import mode_manager, AgentMode
+        if mode_manager.mode in (AgentMode.TEST, AgentMode.AGGRESSIVE):
+            delay_seconds = 3
+        else:
+            delay_config = self.config.get('delay', {'min': 30, 'max': 300})
+            delay_seconds = random.randint(delay_config['min'], delay_config['max'])
 
         candidate = FollowCandidate(
             user_id=user_id,

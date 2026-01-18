@@ -655,44 +655,38 @@ class SocialAgent:
         try:
             user_handle = tweet.user.username
             user_id = tweet.user.id
+            print(f"[FOLLOW] Evaluating @{user_handle}...")
 
             # ID가 없을 수 있으므로(search 결과) username도 같이 전달
             user_obj = self.adapter.get_user(user_id=user_id, username=user_handle)
             if not user_obj:
-                return
-            profile = {
-                'id': user_obj.id,
-                'screen_name': user_obj.username,
-                'name': user_obj.name,
-                'description': user_obj.bio,
-                'followers_count': user_obj.followers_count,
-                'following_count': user_obj.following_count
-            }
-
-            if not profile:
+                print(f"[FOLLOW] Could not get user object for @{user_handle}")
                 return
 
             # 상호작용 이력 조회
             interaction_count = agent_memory.get_interaction_count(user_handle)
-            context = {'interaction_count': interaction_count}
 
             # Follow Engine Decision with SocialUser object
             decision = self.follow_engine.should_follow(
-                user=user_obj,  # Pass Object
-                interaction_context={'interaction_count': 1}  # Simple context for now
+                user=user_obj,
+                interaction_context={'interaction_count': interaction_count}
             )
+            
+            print(f"[FOLLOW] Decision for @{user_handle}: should_follow={decision.should_follow}, reason={decision.reason}")
 
             if decision.should_follow:
                 print(f"[FOLLOW] Decided to follow {user_handle}: {decision.reason}")
-                self.follow_engine.queue_follow(user_id, user_handle)
+                self.follow_engine.queue_follow(user_obj.id, user_handle)  # user_obj.id 사용 (tweet.user.id는 빈 문자열일 수 있음)
                 # 실행은 큐 프로세서가 담당
 
         except Exception as e:
+            import traceback
             print(f"[FOLLOW] Evaluate failed: {e}")
+            traceback.print_exc()
 
     def process_follow_queue(self) -> List[Tuple[str, bool, str]]:
         """팔로우 큐 처리 (main.py에서 호출)"""
-        return follow_engine.process_queue(self.adapter.follow)
+        return self.follow_engine.process_queue(self.adapter.follow)
 
     def get_action_space(self):
         return [

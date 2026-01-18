@@ -109,19 +109,21 @@ def run_with_sdk():
         step_count = 0
         while True:
             try:
-                is_active, state, next_active = activity_scheduler.is_active_now()
-                if not is_active:
-                    sleep_seconds = activity_scheduler.get_seconds_until_active()
-                    print(f"[SLEEP] {state.value} - resuming in {sleep_seconds//60}m")
-                    time.sleep(min(sleep_seconds, 3600))
-                    continue
+                # AGGRESSIVE/TEST 모드에서는 잠 안 잠
+                if mode_manager.config.sleep_enabled:
+                    is_active, state, next_active = activity_scheduler.is_active_now()
+                    if not is_active:
+                        sleep_seconds = activity_scheduler.get_seconds_until_active()
+                        print(f"[SLEEP] {state.value} - resuming in {sleep_seconds//60}m")
+                        time.sleep(min(sleep_seconds, 3600))
+                        continue
 
-                if mode_manager.should_take_break() and activity_scheduler.should_take_break():
-                    break_until = activity_scheduler._break_until
-                    break_duration = activity_scheduler.get_seconds_until_active()
-                    print(f"[BREAK] Taking a break for {break_duration//60}m")
-                    time.sleep(break_duration)
-                    continue
+                    if mode_manager.should_take_break() and activity_scheduler.should_take_break():
+                        break_until = activity_scheduler._break_until
+                        break_duration = activity_scheduler.get_seconds_until_active()
+                        print(f"[BREAK] Taking a break for {break_duration//60}m")
+                        time.sleep(break_duration)
+                        continue
 
                 agent.step()
                 step_count += 1
@@ -183,18 +185,20 @@ def run_standalone():
         step_count = 0
         while True:
             try:
-                is_active, state, next_active = activity_scheduler.is_active_now()
-                if not is_active:
-                    sleep_seconds = activity_scheduler.get_seconds_until_active()
-                    print(f"[SLEEP] {state.value} - resuming in {sleep_seconds//60}m")
-                    time.sleep(min(sleep_seconds, 3600))
-                    continue
+                # AGGRESSIVE/TEST 모드에서는 잠 안 잠
+                if mode_manager.config.sleep_enabled:
+                    is_active, state, next_active = activity_scheduler.is_active_now()
+                    if not is_active:
+                        sleep_seconds = activity_scheduler.get_seconds_until_active()
+                        print(f"[SLEEP] {state.value} - resuming in {sleep_seconds//60}m")
+                        time.sleep(min(sleep_seconds, 3600))
+                        continue
 
-                if mode_manager.should_take_break() and activity_scheduler.should_take_break():
-                    break_duration = activity_scheduler.get_seconds_until_active()
-                    print(f"[BREAK] Taking a break for {break_duration//60}m")
-                    time.sleep(break_duration)
-                    continue
+                    if mode_manager.should_take_break() and activity_scheduler.should_take_break():
+                        break_duration = activity_scheduler.get_seconds_until_active()
+                        print(f"[BREAK] Taking a break for {break_duration//60}m")
+                        time.sleep(break_duration)
+                        continue
 
                 roll = random.random()
                 step_probs = mode_manager.get_step_probabilities(persona.behavior)
@@ -227,9 +231,17 @@ def run_standalone():
 
                 mode_manager.on_success()
                 step_min, step_max = mode_manager.get_step_interval()
-                activity_level = activity_scheduler.get_activity_level()
-                adjusted_min = int(step_min / max(activity_level, 0.1))
-                adjusted_max = int(step_max / max(activity_level, 0.1))
+                
+                # TEST/AGGRESSIVE 모드에서는 activity level 조정 스킵
+                if mode_manager.config.sleep_enabled:
+                    activity_level = activity_scheduler.get_activity_level()
+                    adjusted_min = int(step_min / max(activity_level, 0.1))
+                    adjusted_max = int(step_max / max(activity_level, 0.1))
+                else:
+                    activity_level = 1.0  # 최대 활동
+                    adjusted_min = step_min
+                    adjusted_max = step_max
+                    
                 wait_time = random.randint(adjusted_min, adjusted_max)
                 print(f"[WAIT] {wait_time}s (activity: {activity_level:.1f})")
                 time.sleep(wait_time)

@@ -130,7 +130,7 @@ class TwitterAdapter(SocialPlatformAdapter):
             followers_count=profile.get('followers_count', 0),
             following_count=profile.get('following_count', 0),
             is_verified=profile.get('verified', False),
-            profile_image_url=profile.get('profile_image_url', ''),
+            profile_image_url=profile.get('profile_image') or profile.get('profile_image_url', ''),
             created_at=created_at,
             following_me=profile.get('following', False), # Twikit naming might vary
             raw_data=profile
