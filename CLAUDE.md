@@ -46,13 +46,14 @@ Scout → Perceive → Behavior → Judge → Action → Follow
 | | HumanLikeController - 워밍업/지연/버스트 방지/에러 핸들링 |
 | `agent/content_generator.py` | chat/post 스타일 분리 콘텐츠 생성 + 검증 + LLM 리뷰 |
 | `agent/pattern_tracker.py` | 3-Layer 말투 패턴 추적 (signature/frequent/filler/contextual) |
-| `agent/activity_scheduler.py` | **[NEW]** 사람다운 휴식 패턴 (수면/시간대별 활동/랜덤 휴식/오프데이) |
-| `agent/mode_manager.py` | **[NEW]** Test 모드 시스템 (normal/test/aggressive) |
+| `agent/topic_selector.py` | 가중치 기반 토픽 선택 (core/time/curiosity/trends/inspiration) |
+| `agent/activity_scheduler.py` | 사람다운 휴식 패턴 (수면/시간대별 활동/랜덤 휴식/오프데이) |
+| `agent/mode_manager.py` | 모드 시스템 (normal/test/aggressive) + step 확률 관리 |
 | `agent/follow_engine.py` | 점수 기반 팔로우 판단 + 지연 큐 |
 | `agent/memory.py` | AgentMemory - interactions, facts, curiosity, relationships |
-| `agent/interaction_intelligence.py` | LLM 기반 트윗 분석/판단 |
+| `agent/interaction_intelligence.py` | LLM 기반 트윗 분석/판단 + ResponseType 결정 |
 | `agent/relationship_manager.py` | 유저 관계 추적 (사전정의 + 동적) |
-| `agent/persona_loader.py` | YAML 기반 페르소나 로딩 |
+| `agent/persona_loader.py` | YAML 기반 페르소나 로딩 (중앙 로딩 지점) |
 | `actions/social.py` | Twikit 기반 Twitter API + follow 기능 |
 | `actions/trends.py` | 트렌드 수집 |
 | `core/llm.py` | 멀티 LLM 클라이언트 (Gemini, OpenAI, Anthropic) |
@@ -77,6 +78,23 @@ Scout → Perceive → Behavior → Judge → Action → Follow
 
 ### 튜닝 가능 설정 (behavior.yaml)
 ```yaml
+# 시간대별 검색 키워드 (빈 배열 = core_keywords 사용)
+time_keywords:
+  morning: ["아침", "조식", "모닝커피"]    # 06-11시
+  lunch: ["점심", "메뉴추천", "맛집"]      # 11-14시
+  afternoon: []                           # 14-17시 (core_keywords)
+  dinner: ["저녁", "회식", "요리법"]       # 17-21시
+  late_night: ["야식", "치킨", "맥주"]     # 21-24시
+  default: []                             # 그 외
+
+# 시간대별 기분 설명
+mood_descriptions:
+  morning: "아침 일찍 일어나 재료를 검수하며..."
+  lunch: "점심 영업 준비로 극도로 예민하고..."
+  afternoon: "영업 후 휴식하며 멍하니..."
+  dinner: "저녁 메인 요리를 조리하며..."
+  late_night: "늦은 밤, 혼자 술 한 잔 하며..."
+
 personality_traits:
   introversion: 0.85      # 내향성
   obsessiveness: 0.80     # 집착도
@@ -160,16 +178,34 @@ content_review:
 
 ## Persona System
 
+### 폴더 구조
 ```
 config/active_persona.yaml              # 현재 활성 페르소나 지정
 config/personas/
   chef_choi/                            # 페르소나별 독립 폴더
-    persona.yaml                        # 설정 + pattern_registry + speech_style
-    behavior.yaml                       # 행동 확률 + human_like + activity_schedule
+    persona.yaml                        # 정체성 + pattern_registry + speech_style + quip_pool
+    behavior.yaml                       # 행동 확률 + time_keywords + mood_descriptions
     relationships.yaml                  # 관계도
     prompt.txt                          # 시스템 프롬프트
     rules.txt                           # 소통 규칙
-  _template/                            # 새 페르소나 템플릿
+  _template/                            # 새 페르소나 템플릿 (전체 스키마 포함)
+```
+
+### 페르소나 이식성
+**페르소나 폴더 복사 = 완전 독립 에이전트**
+
+모든 페르소나 종속 설정이 폴더 내에 포함:
+- `persona.yaml`: 정체성 (이름, 키워드, 말투, quip_pool)
+- `behavior.yaml`: 행동 패턴 (time_keywords, mood_descriptions, 확률)
+- 하드코딩 없음 → 코드 수정 없이 페르소나 교체 가능
+
+```bash
+# 새 페르소나 생성
+cp -r config/personas/_template config/personas/new_persona
+# active_persona.yaml 수정
+echo "active_persona: new_persona" > config/active_persona.yaml
+# 실행
+python main.py
 ```
 
 ### Pattern Registry (persona.yaml)
@@ -221,11 +257,19 @@ speech_style:   # 콘텐츠 생성 스타일 분리
 
 `agent/mode_manager.py` + 환경변수 `AGENT_MODE`
 
-| Mode | 간격 | 확률 | 워밍업 | 수면 | 휴식 | 용도 |
-|------|------|------|--------|------|------|------|
-| **normal** | 60-180s | **페르소나 값** | 5스텝 | O | O | 프로덕션 |
-| **test** | 15-45s | 50/15/10% | 2스텝 | X | X | 테스트 |
-| **aggressive** | 8-20s | 70/25/15% | 0스텝 | X | X | 개발 (주의!) |
+### Step 확률 (scout / mentions / post)
+| Mode | 간격 | Scout | Mentions | Post | 워밍업 | 수면 | 휴식 |
+|------|------|-------|----------|------|--------|------|------|
+| **normal** | 60-180s | 80% | 15% | 5% | 5스텝 | O | O |
+| **test** | 15-45s | 75% | 15% | 10% | 2스텝 | X | X |
+| **aggressive** | 8-20s | 70% | 15% | 15% | 0스텝 | X | X |
+
+### Action 확률 (like / repost / comment)
+| Mode | Like | Repost | Comment |
+|------|------|--------|---------|
+| **normal** | 페르소나 값 | 페르소나 값 | 페르소나 값 |
+| **test** | 45% | 45% | 12% |
+| **aggressive** | 60% | 60% | 18% |
 
 ### 동작
 - **normal**: 페르소나 `behavior.yaml`의 `independent_actions` 값 그대로 사용 (프로덕션용)
@@ -365,3 +409,68 @@ post = generator.generate_post(
 - Follow Engine: 지연 실행 큐로 봇 감지 회피
 - Activity Scheduler: 시간대별 활동 강도로 step 간격 동적 조절
 - Mode Manager: 226 에러 시 자동 안전 모드 전환
+- TopicSelector: 가중치 기반 토픽 선택 (core=1.0, time=1.2, curiosity=2.0, inspiration=2.5, trends=1.5)
+
+## Architecture & Future Plans
+
+### 현재 구조 (A: 오픈소스 배포용)
+
+```
+config/personas/*.yaml    →  YAML 파일 로딩
+agent_memory.json         →  JSON 파일 저장
+.env                      →  환경변수 인증
+python main.py            →  단일 프로세스 실행
+```
+
+**특징**: 1인 1프로세스, 로컬 실행, 페르소나 폴더 복사로 교체
+
+### 데이터 접근 지점 (DB 전환 시 수정 대상)
+
+| 데이터 | 현재 | 로딩 위치 |
+|--------|------|----------|
+| 페르소나 설정 | YAML | `persona_loader.py` |
+| 행동 설정 | YAML | `persona_loader.py` |
+| 메모리 | JSON | `memory.py` |
+| 관계 설정 | YAML | `relationship_manager.py` (persona_loader 경유) |
+| Twitter 인증 | .env + 쿠키 | `social.py` |
+
+### 향후 확장 (B: SaaS 서비스용)
+
+```
+현재 (A)                          SaaS (B)
+─────────────────────────────────────────────────────
+config/personas/*.yaml     →     DB (personas 테이블)
+.env (Twitter 인증)        →     DB (encrypted credentials) + OAuth
+agent_memory.json          →     DB (memories 테이블, user_id FK)
+twitter_cookies.json       →     DB (sessions 테이블)
+python main.py (1개)       →     Worker Pool (N개 프로세스)
+없음                       →     API 서버 (CRUD, 대시보드)
+없음                       →     Job Queue (Redis/Celery)
+```
+
+### 마이그레이션 전략
+
+**1단계 (현재 완료)**: 하드코딩 제거
+- `behavior.yaml`로 시간대 키워드/기분 이동
+- 페르소나 폴더 복사 = 완전 독립
+
+**2단계 (선택)**: 스키마 명시화
+- Pydantic 모델로 설정 검증
+- `persona_loader.py`에서 타입 체크
+
+**3단계 (SaaS 전환 시)**: Provider 패턴
+```python
+class PersonaProvider(ABC):
+    def get_config(self, persona_id) -> PersonaConfig
+    def get_behavior(self, persona_id) -> BehaviorConfig
+
+class FileProvider(PersonaProvider):    # 현재
+    def get_config(self, persona_id):
+        return yaml.load(f"config/personas/{persona_id}/...")
+
+class DBProvider(PersonaProvider):      # 나중에
+    def get_config(self, persona_id):
+        return db.query(Persona).get(persona_id)
+```
+
+**핵심**: `persona_loader.py` 내부만 수정하면 DB 전환 완료
