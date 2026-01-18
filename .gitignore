@@ -25,7 +25,7 @@ chrome_data/
 gcp-key.json
 
 # Runtime logs
-posted_content.txt
+data/posted_content.txt
 
 # Temp files
 task_plan.md

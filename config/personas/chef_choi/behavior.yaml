@@ -132,8 +132,8 @@ content_review:
 # 팔로우 행동 설정
 follow_behavior:
   enabled: true
-  daily_limit: 20                      # 하루 최대 팔로우 수
-  base_probability: 0.15               # 기본 팔로우 확률
+  daily_limit: 100                     # 하루 최대 팔로우 수
+  base_probability: 0.5               # 기본 팔로우 확률
   score_threshold: 40                  # 최소 점수 (0-100)
 
   delay:

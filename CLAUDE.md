@@ -359,7 +359,7 @@ speech_style:   # 콘텐츠 생성 스타일 분리
 | `.env` | API 키, Twitter 인증 정보 |
 | `chrome_data/` | Twitter 세션 데이터 |
 | `agent_memory.json` | 런타임 메모리 (interactions, relationships) |
-| `posted_content.txt` | 게시 로그 |
+| `data/posted_content.txt` | 게시 로그 (fallback) |
 
 ## Mode System
 

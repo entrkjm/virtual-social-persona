@@ -279,7 +279,7 @@ def post_threads(content: str) -> str:
 def _log_to_file(platform: str, content: str):
     """API 실패시 로컬 백업 / Fallback logging"""
     try:
-        with open("posted_content.txt", "a", encoding="utf-8") as f:
+        with open("data/posted_content.txt", "a", encoding="utf-8") as f:
             from datetime import datetime
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             f.write(f"[{timestamp}] [{platform}]\n{content}\n{'-'*50}\n")
