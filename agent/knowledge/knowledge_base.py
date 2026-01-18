@@ -48,8 +48,15 @@ class KnowledgeBase:
         if expired:
             self._save()
 
-    def learn_topic(self, keyword: str, force: bool = False) -> Optional[Dict]:
-        """키워드 조사 후 지식 저장"""
+    def learn_topic(self, keyword: str, force: bool = False, source_platform: str = 'twitter', source_data: List[Dict] = None) -> Optional[Dict]:
+        """키워드 조사 후 지식 저장
+        
+        Args:
+            keyword: 학습할 키워드
+            force: 기존 지식 덮어쓰기 여부
+            source_platform: 출처 플랫폼
+            source_data: 외부에서 주입된 데이터 (없으면 Twitter에서 직접 조회)
+        """
         if not keyword or len(keyword) < 2:
             return None
 
@@ -60,13 +67,18 @@ class KnowledgeBase:
                 return existing
 
         try:
-            # 1. 키워드로 최근 트윗 검색
-            tweets = search_tweets(keyword, count=5)
+            # 1. 데이터가 주입되지 않았으면 Twitter에서 조회 (레거시 호환)
+            if source_data is None:
+                from platforms.twitter.social import search_tweets
+                tweets = search_tweets(keyword, count=5)
+            else:
+                tweets = source_data
+                
             if not tweets:
-                return self._create_minimal_knowledge(keyword)
+                return self._create_minimal_knowledge(keyword, source_platform)
 
             tweets_text = "\n".join([
-                f"- @{t['user']}: {t['text'][:100]}"
+                f"- @{t.get('user', 'unknown')}: {t.get('text', '')[:100]}"
                 for t in tweets[:5]
             ])
 
@@ -116,7 +128,8 @@ JSON 형식으로 답해:
                 "summary": summary,
                 "my_angle": relevance_data.get("my_angle", ""),
                 "relevance": min(1.0, max(0.0, float(relevance_data.get("relevance", 0.1)))),
-                "source_tweets": [t['id'] for t in tweets[:3]],
+                "source_platform": source_platform,
+                "source_ids": [t.get('id', '') for t in tweets[:3]],
                 "learned_at": datetime.now().isoformat(),
                 "expires_at": (datetime.now() + timedelta(hours=24)).isoformat()
             }
@@ -124,21 +137,22 @@ JSON 형식으로 답해:
             self.knowledge[keyword] = knowledge
             self._save()
 
-            print(f"[KNOWLEDGE] Learned '{keyword}' (relevance: {knowledge['relevance']:.2f})")
+            print(f"[KNOWLEDGE] Learned '{keyword}' from {source_platform} (relevance: {knowledge['relevance']:.2f})")
             return knowledge
 
         except Exception as e:
             print(f"[KNOWLEDGE] Learn failed for '{keyword}': {e}")
-            return self._create_minimal_knowledge(keyword)
+            return self._create_minimal_knowledge(keyword, source_platform)
 
-    def _create_minimal_knowledge(self, keyword: str) -> Dict:
+    def _create_minimal_knowledge(self, keyword: str, source_platform: str = 'unknown') -> Dict:
         """최소 지식 (검색 실패 시)"""
         knowledge = {
             "keyword": keyword,
             "summary": "",
             "my_angle": "",
             "relevance": 0.0,
-            "source_tweets": [],
+            "source_platform": source_platform,
+            "source_ids": [],
             "learned_at": datetime.now().isoformat(),
             "expires_at": (datetime.now() + timedelta(hours=6)).isoformat()  # 짧은 만료
         }

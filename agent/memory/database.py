@@ -78,6 +78,7 @@ class MemoryDatabase:
         self.db_path = db_path or settings.MEMORY_DB_PATH
         self._ensure_data_dir()
         self._init_db()
+        self._migrate_db()  # Add platform columns to existing DBs
 
     def _ensure_data_dir(self):
         """데이터 디렉토리 생성 / Ensure data directory exists"""
@@ -103,6 +104,7 @@ class MemoryDatabase:
                 CREATE TABLE IF NOT EXISTS episodes (
                     id TEXT PRIMARY KEY,
                     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    platform TEXT DEFAULT 'twitter',
                     type TEXT NOT NULL,
                     source_id TEXT,
                     source_user TEXT,
@@ -139,7 +141,8 @@ class MemoryDatabase:
             # Relationships table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS relationships (
-                    user_handle TEXT PRIMARY KEY,
+                    user_handle TEXT NOT NULL,
+                    platform TEXT DEFAULT 'twitter',
                     first_met_at DATETIME,
                     predefined_relationship TEXT,
                     interaction_count INTEGER DEFAULT 0,
@@ -151,7 +154,8 @@ class MemoryDatabase:
                     sentiment_avg REAL DEFAULT 0.0,
                     common_topics TEXT,
                     last_interaction_at DATETIME,
-                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (platform, user_handle)
                 )
             """)
 
@@ -188,6 +192,7 @@ class MemoryDatabase:
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS posting_history (
                     id TEXT PRIMARY KEY,
+                    platform TEXT DEFAULT 'twitter',
                     inspiration_id TEXT,
                     content TEXT NOT NULL,
                     trigger_type TEXT,
@@ -214,6 +219,28 @@ class MemoryDatabase:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_relationships_last_interaction ON relationships(last_interaction_at)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_pattern_usage_type ON pattern_usage(pattern_type)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_pattern_usage_at ON pattern_usage(used_at)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_episodes_platform ON episodes(platform)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_posting_platform ON posting_history(platform)")
+
+    def _migrate_db(self):
+        """기존 DB에 platform 컬럼 추가 마이그레이션"""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Check if platform column exists in each table
+            tables_to_migrate = ['episodes', 'posting_history', 'relationships']
+            
+            for table in tables_to_migrate:
+                cursor.execute(f"PRAGMA table_info({table})")
+                columns = [col[1] for col in cursor.fetchall()]
+                
+                if 'platform' not in columns:
+                    try:
+                        cursor.execute(f"ALTER TABLE {table} ADD COLUMN platform TEXT DEFAULT 'twitter'")
+                        print(f"[DB Migration] Added platform column to {table}")
+                    except Exception as e:
+                        # Column might already exist (race condition)
+                        pass
 
     # ==================== Episode Methods ====================
 
@@ -522,23 +549,29 @@ class MemoryDatabase:
 
     # ==================== Posting History Methods ====================
 
-    def add_posting(self, inspiration_id: Optional[str], content: str, trigger_type: str) -> str:
+    def add_posting(self, inspiration_id: Optional[str], content: str, trigger_type: str, platform: str = 'twitter') -> str:
         post_id = str(uuid.uuid4())
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT INTO posting_history (id, inspiration_id, content, trigger_type)
-                VALUES (?, ?, ?, ?)
-            """, (post_id, inspiration_id, content, trigger_type))
+                INSERT INTO posting_history (id, platform, inspiration_id, content, trigger_type)
+                VALUES (?, ?, ?, ?, ?)
+            """, (post_id, platform, inspiration_id, content, trigger_type))
         return post_id
 
-    def count_posts_today(self) -> int:
+    def count_posts_today(self, platform: str = None) -> int:
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT COUNT(*) as count FROM posting_history
-                WHERE date(posted_at) = date('now')
-            """)
+            if platform:
+                cursor.execute("""
+                    SELECT COUNT(*) as count FROM posting_history
+                    WHERE date(posted_at) = date('now') AND platform = ?
+                """, (platform,))
+            else:
+                cursor.execute("""
+                    SELECT COUNT(*) as count FROM posting_history
+                    WHERE date(posted_at) = date('now')
+                """)
             return cursor.fetchone()['count']
 
     def get_last_post_time(self) -> Optional[datetime]:
@@ -550,16 +583,23 @@ class MemoryDatabase:
             row = cursor.fetchone()
             return datetime.fromisoformat(row['posted_at']) if row else None
 
-    def get_recent_posts(self, limit: int = 5) -> List[Dict]:
-        """최근 게시글 조회"""
+    def get_recent_posts(self, limit: int = 5, platform: str = None) -> List[Dict]:
+        """최근 게시글 조회 (플랫폼 필터 옵션)"""
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT content, trigger_type, posted_at FROM posting_history
-                ORDER BY posted_at DESC LIMIT ?
-            """, (limit,))
+            if platform:
+                cursor.execute("""
+                    SELECT content, trigger_type, posted_at, platform FROM posting_history
+                    WHERE platform = ?
+                    ORDER BY posted_at DESC LIMIT ?
+                """, (platform, limit))
+            else:
+                cursor.execute("""
+                    SELECT content, trigger_type, posted_at, platform FROM posting_history
+                    ORDER BY posted_at DESC LIMIT ?
+                """, (limit,))
             return [
-                {"content": row['content'], "type": row['trigger_type'], "at": row['posted_at']}
+                {"content": row['content'], "type": row['trigger_type'], "at": row['posted_at'], "platform": row['platform'] if 'platform' in row.keys() else 'twitter'}
                 for row in cursor.fetchall()
             ]
 
