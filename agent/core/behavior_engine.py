@@ -530,7 +530,7 @@ class BehaviorEngine:
         elif actions['like']: suggested_action = "LIKE"
 
         return BehaviorDecision(
-            decision="INTERESTED",
+            decision="INTERACT",
             reason=f"Score {score:.2f} passed threshold",
             suggested_action=suggested_action,
             confidence=score,
