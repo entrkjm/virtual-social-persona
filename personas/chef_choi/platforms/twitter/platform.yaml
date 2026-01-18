@@ -1,0 +1,18 @@
+# Twitter Platform Configuration
+
+# 플랫폼 공통 제약사항
+constraints:
+  max_length: 280
+  weighted_length: true    # 한글 2바이트 계산
+  
+# 문자 규칙 (Twitter 특화)
+script:
+  allowed: "한글만 사용"
+  forbidden: ["알파벳", "히라가나", "가타카나", "한자"]
+  note: "숫자, 특수문자는 허용. 외래어도 한글로 표기"
+
+# 활성화된 모드
+enabled_modes:
+  - series      # 기획 연재
+  - casual      # 일상 독백
+  - social      # 상호작용 (like/repost/reply)

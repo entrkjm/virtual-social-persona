@@ -92,28 +92,62 @@ class PersonaLoader:
             with open(relationships_path, 'r', encoding='utf-8') as f:
                 relationships = yaml.safe_load(f) or {}
 
-        # 선택: signature_series/{platform}/{role}.yaml (플랫폼/역할별 전략)
-        signature_series = {}
-        series_dir = os.path.join(persona_dir, "signature_series")
+        # 선택: platforms/{platform}/modes/{mode}/*.yaml (새 구조)
+        # 또는 signature_series/{platform}/*.yaml (레거시)
+        platform_configs = {}
         
-        if os.path.exists(series_dir) and os.path.isdir(series_dir):
-            for platform in os.listdir(series_dir):
-                platform_path = os.path.join(series_dir, platform)
-                if os.path.isdir(platform_path):
-                    # 플랫폼별 딕셔너리 생성
-                    signature_series[platform] = {}
-                    for filename in os.listdir(platform_path):
-                        if filename.endswith(".yaml"):
-                            role = filename[:-5]  # .yaml 제거
-                            file_path = os.path.join(platform_path, filename)
-                            with open(file_path, 'r', encoding='utf-8') as f:
-                                signature_series[platform][role] = yaml.safe_load(f) or {}
-                elif platform.endswith(".yaml"):
-                    # 레거시 지원: signature_series/*.yaml (파일인 경우)
-                    platform_name = platform[:-5]
-                    file_path = platform_path
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        signature_series[platform_name] = yaml.safe_load(f) or {}
+        # 새 구조: platforms/
+        platforms_dir = os.path.join(persona_dir, "platforms")
+        if os.path.exists(platforms_dir) and os.path.isdir(platforms_dir):
+            for platform in os.listdir(platforms_dir):
+                platform_path = os.path.join(platforms_dir, platform)
+                if not os.path.isdir(platform_path):
+                    continue
+                    
+                platform_configs[platform] = {'modes': {}}
+                
+                # platform.yaml 로드
+                platform_yaml = os.path.join(platform_path, "platform.yaml")
+                if os.path.exists(platform_yaml):
+                    with open(platform_yaml, 'r', encoding='utf-8') as f:
+                        platform_configs[platform]['config'] = yaml.safe_load(f) or {}
+                
+                # modes/ 하위 디렉토리
+                modes_dir = os.path.join(platform_path, "modes")
+                if os.path.exists(modes_dir) and os.path.isdir(modes_dir):
+                    for mode in os.listdir(modes_dir):
+                        mode_path = os.path.join(modes_dir, mode)
+                        if not os.path.isdir(mode_path):
+                            continue
+                            
+                        platform_configs[platform]['modes'][mode] = {}
+                        for filename in os.listdir(mode_path):
+                            if filename.endswith(".yaml"):
+                                role = filename[:-5]
+                                file_path = os.path.join(mode_path, filename)
+                                with open(file_path, 'r', encoding='utf-8') as f:
+                                    platform_configs[platform]['modes'][mode][role] = yaml.safe_load(f) or {}
+        
+        # 레거시 지원: signature_series (새 구조가 없을 때만)
+        signature_series = {}
+        if not platform_configs:
+            series_dir = os.path.join(persona_dir, "signature_series")
+            if os.path.exists(series_dir) and os.path.isdir(series_dir):
+                for platform in os.listdir(series_dir):
+                    platform_path = os.path.join(series_dir, platform)
+                    if os.path.isdir(platform_path):
+                        signature_series[platform] = {}
+                        for filename in os.listdir(platform_path):
+                            if filename.endswith(".yaml"):
+                                role = filename[:-5]
+                                file_path = os.path.join(platform_path, filename)
+                                with open(file_path, 'r', encoding='utf-8') as f:
+                                    signature_series[platform][role] = yaml.safe_load(f) or {}
+        else:
+            # 새 구조에서 series 모드를 signature_series로 매핑 (하위 호환)
+            for platform, cfg in platform_configs.items():
+                if 'series' in cfg.get('modes', {}):
+                    signature_series[platform] = cfg['modes']['series']
 
         # Domain 설정 로드
         domain_data = persona_data.get('domain', {})

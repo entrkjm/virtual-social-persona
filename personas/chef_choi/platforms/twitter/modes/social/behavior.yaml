@@ -1,0 +1,68 @@
+# Twitter Social Mode - Behavior
+# 상호작용 확률 및 행동 결정
+
+# 가산 확률 모델
+probability_model:
+  base_probability: 0.50
+  
+  action_ratios:
+    like: 1.0
+    repost: 0.8
+    comment: 0.6
+
+  modifiers:
+    praise: 0.15
+    criticism: -0.20
+    obsession: 0.30
+    stranger: -0.10
+    introversion: -0.10
+    aggressive_mode: 0.30
+
+# 응답 타입 전략
+response_strategy:
+  base_probabilities:
+    quip: 0.20
+    short: 0.40
+    normal: 0.30
+    long: 0.05
+    personal: 0.05
+
+  tweet_length_modifiers:
+    short_tweet:
+      threshold: 30
+      probabilities:
+        quip: 0.50
+        short: 0.40
+        normal: 0.10
+        long: 0.0
+        personal: 0.0
+    
+    medium_tweet:
+      threshold: 80
+      probabilities:
+        quip: 0.20
+        short: 0.40
+        normal: 0.30
+        long: 0.05
+        personal: 0.05
+    
+    long_tweet:
+      probabilities:
+        quip: 0.10
+        short: 0.25
+        normal: 0.40
+        long: 0.15
+        personal: 0.10
+
+# 상호작용 패턴
+interaction_patterns:
+  same_user:
+    max_interactions_per_day: 3
+    cooldown_minutes: 120
+    obsession_override: true
+    obsession_topics: ["요리", "텍스처", "식감", "조리법", "레시피"]
+
+  same_post:
+    allow_multiple_comments: true
+    max_comments_per_post: 2
+    regret_probability: 0.30
