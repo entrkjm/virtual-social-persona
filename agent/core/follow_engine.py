@@ -8,7 +8,7 @@ from typing import Dict, List, Tuple, Optional, Any
 from dataclasses import dataclass, field
 import yaml
 from config.settings import settings
-from agent.persona.persona_loader import active_persona_name
+from agent.persona.persona_loader import active_persona_name, active_persona
 
 
 @dataclass
@@ -68,7 +68,7 @@ class FollowEngine:
             },
             'priority': {
                 'follows_me': True,
-                'bio_keywords': ['요리', '셰프', '음식', '레시피']
+                'bio_keywords': active_persona.domain.keywords if active_persona.domain else []
             },
             'rate_limit': {
                 'max_consecutive': 3,

@@ -88,8 +88,8 @@ class SocialAgent:
         """
         score = 0.0
 
-        # 1. 관련도 (50%) - perception의 relevance_to_cooking 사용
-        relevance = perception.get('relevance_to_cooking', 0.0)
+        # 1. 관련도 (50%) - perception의 relevance_to_domain 사용
+        relevance = perception.get('relevance_to_domain', 0.0)
         score += relevance * 0.5
 
         # 2. 인기도 (30%) - engagement 기반
@@ -431,7 +431,7 @@ class SocialAgent:
             target, perception, score = scored_tweets[0]
 
             eng = target.get('engagement', {})
-            print(f"[TARGET] @{target['user']} (score={score:.2f}, likes={eng.get('favorite_count', 0)}, rel={perception.get('relevance_to_cooking', 0):.1f})")
+            print(f"[TARGET] @{target['user']} (score={score:.2f}, likes={eng.get('favorite_count', 0)}, rel={perception.get('relevance_to_domain', 0):.1f})")
 
             # MEMORY
             emotional_impact = self._calculate_emotional_impact(perception)
@@ -626,7 +626,7 @@ class SocialAgent:
                 fn_name="post_tweet",
                 fn_description="[RARE - 5% 사용] 독립 게시물 작성. 특별한 영감이 있을 때만 사용. scout_timeline이나 check_mentions 결과를 재포스팅하지 마세요.",
                 args=[
-                    Argument(name="content", description="새로운 요리적 통찰 (이전 결과 보고 금지)", type="str")
+                    Argument(name="content", description=f"새로운 {self.persona.domain.name} 관련 통찰 (이전 결과 보고 금지)", type="str")
                 ],
                 executable=self.post_tweet_executable
             )

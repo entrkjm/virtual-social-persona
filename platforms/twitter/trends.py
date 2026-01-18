@@ -10,6 +10,7 @@ import asyncio
 load_dotenv()
 
 _knowledge_base = None
+_persona_domain = None
 
 def _get_knowledge_base():
     """Lazy import to avoid circular dependency"""
@@ -18,6 +19,17 @@ def _get_knowledge_base():
         from agent.knowledge.knowledge_base import knowledge_base
         _knowledge_base = knowledge_base
     return _knowledge_base
+
+def _get_fallback_topics():
+    """Lazy import for persona fallback topics"""
+    global _persona_domain
+    if _persona_domain is None:
+        try:
+            from agent.persona.persona_loader import active_persona
+            _persona_domain = active_persona.domain
+        except:
+            return ["topic"]
+    return _persona_domain.fallback_topics if _persona_domain and _persona_domain.fallback_topics else ["topic"]
 
 
 def get_trending_topics(count=5):
@@ -82,7 +94,7 @@ async def _fetch_trends_async(client, count):
 
     except Exception as e:
         print(f"[TRENDS] {e}")
-        return ["요리", "맛집", "레시피"]  # fallback
+        return _get_fallback_topics()
 
 
 def get_daily_briefing():

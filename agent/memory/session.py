@@ -213,8 +213,15 @@ class AgentMemory:
         # 요약 생성 (LLM 사용)
         if llm_client:
             try:
+                # 페르소나 정보 lazy loading
+                try:
+                    from agent.persona.persona_loader import active_persona
+                    persona_identity = active_persona.identity
+                except:
+                    persona_identity = "AI 에이전트"
+
                 summary_prompt = f"""
-                다음은 AI 셰프의 과거 대화 기록입니다. 이를 읽고 중요한 사실만 추출하여 한 문장으로 요약하세요.
+                다음은 {persona_identity}의 과거 대화 기록입니다. 이를 읽고 중요한 사실만 추출하여 한 문장으로 요약하세요.
 
                 대화 기록:
                 {to_archive[:10]}  # 샘플만 전달

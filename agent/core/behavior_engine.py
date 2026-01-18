@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from config.settings import settings
-from agent.persona.persona_loader import active_persona_name
+from agent.persona.persona_loader import active_persona_name, active_persona
 from agent.core.mode_manager import mode_manager
 
 
@@ -210,7 +210,7 @@ class BehaviorEngine:
                     'max_interactions_per_day': 3,
                     'cooldown_minutes': 120,
                     'obsession_override': True,
-                    'obsession_topics': ['요리', '레시피']
+                    'obsession_topics': active_persona.domain.keywords[:2] if active_persona.domain else []
                 },
                 'same_post': {
                     'max_comments_per_post': 2,
@@ -469,7 +469,7 @@ class BehaviorEngine:
         - perception/tweet 전달 시 관련도/인기도 기반 확률 조정
 
         Args:
-            perception: perceive_tweet 결과 (relevance_to_cooking 등)
+            perception: perceive_tweet 결과 (relevance_to_domain 등)
             tweet: 트윗 데이터 (engagement 포함)
 
         Returns:
@@ -487,7 +487,7 @@ class BehaviorEngine:
             base_comment = action_config.get('comment_probability', 0.05)
 
         # 관련도 기반 조정 (0.3 ~ 1.0)
-        relevance = perception.get('relevance_to_cooking', 0.5) if perception else 0.5
+        relevance = perception.get('relevance_to_domain', 0.5) if perception else 0.5
         relevance_factor = 0.3 + (relevance * 0.7)
 
         # 인기도 기반 조정 (engagement)

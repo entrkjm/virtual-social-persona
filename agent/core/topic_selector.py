@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass, field
 from collections import deque
+from agent.persona.persona_loader import active_persona
 
 
 @dataclass
@@ -66,7 +67,8 @@ class TopicSelector:
 
         if not valid_sources:
             # 쿨다운으로 다 막혔으면 core에서 랜덤
-            fallback = random.choice(core_keywords) if core_keywords else "요리"
+            domain_fallback = active_persona.domain.fallback_topics[0] if active_persona.domain and active_persona.domain.fallback_topics else "topic"
+            fallback = random.choice(core_keywords) if core_keywords else domain_fallback
             return fallback, 'core_fallback'
 
         # 가중치 기반 선택
@@ -98,7 +100,8 @@ class TopicSelector:
                 candidates.append((kw, source.name, source.weight))
 
         if not candidates:
-            return "요리", "fallback"
+            domain_fallback = active_persona.domain.fallback_topics[0] if active_persona.domain and active_persona.domain.fallback_topics else "topic"
+            return domain_fallback, "fallback"
 
         # 가중치 기반 랜덤 선택
         weights = [c[2] for c in candidates]

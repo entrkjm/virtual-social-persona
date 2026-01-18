@@ -11,6 +11,15 @@ PERSONAS_DIR = "config/personas"
 
 
 @dataclass
+class DomainConfig:
+    name: str                      # 전문 분야명 (예: "요리")
+    keywords: List[str]            # 관련 키워드
+    perspective: str               # LLM 프롬프트용 관점 (예: "요리사 관점에서")
+    relevance_desc: str            # 분석 결과 설명 (예: "요리/음식 관련도")
+    fallback_topics: List[str]     # 트렌드 실패 시 fallback
+
+
+@dataclass
 class PersonaConfig:
     name: str
     identity: str
@@ -21,6 +30,7 @@ class PersonaConfig:
     engagement_rules: str
     agent_goal: str
     agent_description: str
+    domain: DomainConfig = None
     speech_style: Dict = field(default_factory=dict)
     behavior: Dict = field(default_factory=dict)
     relationships: Dict = field(default_factory=dict)
@@ -80,6 +90,16 @@ class PersonaLoader:
             with open(relationships_path, 'r', encoding='utf-8') as f:
                 relationships = yaml.safe_load(f) or {}
 
+        # Domain 설정 로드
+        domain_data = persona_data.get('domain', {})
+        domain = DomainConfig(
+            name=domain_data.get('name', '일반'),
+            keywords=domain_data.get('keywords', persona_data.get('core_keywords', [])),
+            perspective=domain_data.get('perspective', f"{persona_data.get('occupation', '')} 관점에서"),
+            relevance_desc=domain_data.get('relevance_desc', '관련도'),
+            fallback_topics=domain_data.get('fallback_topics', persona_data.get('core_keywords', [])[:3])
+        )
+
         return PersonaConfig(
             name=persona_data['name'],
             identity=persona_data['identity'],
@@ -90,6 +110,7 @@ class PersonaLoader:
             engagement_rules=engagement_rules,
             agent_goal=persona_data.get('agent_goal', ''),
             agent_description=persona_data.get('agent_description', ''),
+            domain=domain,
             speech_style=persona_data.get('speech_style', {}),
             behavior=behavior,
             relationships=relationships,
