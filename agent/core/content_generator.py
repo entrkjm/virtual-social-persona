@@ -6,6 +6,7 @@ Response Type 기반 분기 (QUIP/SHORT/NORMAL/LONG)
 유사도 기반 중복 방지
 """
 import re
+import json
 import random
 from typing import Dict, List, Optional, Set
 from dataclasses import dataclass
@@ -206,6 +207,59 @@ class ContentGenerator:
         self.review_patterns = review_config.get('patterns_to_moderate', [])
         self.review_max_occurrences = review_config.get('max_pattern_occurrences', 1)
 
+    def _analyze_recent_posts(self, recent_posts: List[str]) -> Dict:
+        """최근 포스트 분석 - 주제/표현 추출 (LLM)"""
+        if not recent_posts:
+            return {'topics': [], 'openers': [], 'expressions': [], 'tone': ''}
+
+        posts_text = '\n'.join([f'{i+1}. {p}' for i, p in enumerate(recent_posts[:5])])
+
+        prompt = f"""최근 SNS 포스트들을 분석해서 JSON으로 출력하세요.
+
+{posts_text}
+
+다음 형식으로만 출력 (설명 없이 JSON만):
+{{
+    "topics": ["핵심 주제/소재 3-5개 (예: 아기돼지삼형제, 레시피, 스탠다드)"],
+    "openers": ["자주 쓴 시작 표현 2-3개 (예: 혼자 생각해봤거든요, 문득)"],
+    "expressions": ["반복되는 특징적 표현 3-5개 (예: 뭉근하게, 텍스처, 나야 들기름)"],
+    "tone": "전반적인 톤 한 단어 (예: 센치함/진지함/가벼움/철학적)"
+}}"""
+
+        try:
+            response = llm_client.generate(prompt)
+            clean = response.strip()
+            if clean.startswith('```'):
+                clean = clean.split('```')[1]
+                if clean.startswith('json'):
+                    clean = clean[4:]
+            return json.loads(clean)
+        except Exception as e:
+            print(f"[DIVERSITY] 분석 실패: {e}")
+            return {'topics': [], 'openers': [], 'expressions': [], 'tone': ''}
+
+    def _check_diversity(self, text: str, banned: Dict) -> tuple:
+        """다양성 검증 - 통과 못하면 (False, 이유) 반환"""
+        text_lower = text.lower()
+
+        for topic in banned.get('topics', []):
+            if topic and len(topic) >= 2 and topic.lower() in text_lower:
+                return False, f"주제 중복: {topic}"
+
+        first_30 = text[:30]
+        for opener in banned.get('openers', []):
+            if opener and opener in first_30:
+                return False, f"시작 표현 중복: {opener}"
+
+        expr_count = 0
+        for expr in banned.get('expressions', []):
+            if expr and len(expr) >= 2 and expr in text:
+                expr_count += 1
+        if expr_count >= 2:
+            return False, f"표현 과다 반복: {expr_count}개"
+
+        return True, "OK"
+
     def _get_energy_level(self) -> str:
         weights = {'tired': 0.25, 'normal': 0.50, 'excited': 0.25}
         return random.choices(
@@ -375,10 +429,16 @@ class ContentGenerator:
         context: Dict = None,
         recent_posts: List[str] = None
     ) -> str:
-        """독립 포스팅 생성 (post 모드) - 검증 + 유사도 체크 포함"""
+        """독립 포스팅 생성 (post 모드) - 다양성 검증 + 유사도 체크 포함"""
         context = context or {}
         recent_posts = recent_posts or []
         config = self.post_config
+
+        # LLM으로 최근 포스트 분석 (주제/표현 추출)
+        banned = self._analyze_recent_posts(recent_posts)
+        if banned.get('topics') or banned.get('expressions'):
+            print(f"[DIVERSITY] 금지 주제: {banned.get('topics', [])}")
+            print(f"[DIVERSITY] 금지 표현: {banned.get('expressions', [])}")
 
         def _generate():
             energy = self._get_energy_level()
@@ -394,33 +454,35 @@ class ContentGenerator:
             topic_context = context.get('topic_context', '')
             context_hint = f"\n- 배경지식: {topic_context}" if topic_context else ""
 
+            # LLM 분석 기반 다양성 프롬프트
             anti_repetition = ""
-            if recent_posts:
-                recent_summary = "\n".join([f"  - {p[:50]}..." if len(p) > 50 else f"  - {p}" for p in recent_posts[:5]])
+            if banned.get('topics') or banned.get('expressions'):
+                topics_str = ', '.join(banned.get('topics', [])) or '없음'
+                openers_str = ' / '.join([f'"{o}"' for o in banned.get('openers', [])]) or '없음'
+                exprs_str = ', '.join(banned.get('expressions', [])) or '없음'
+                prev_tone = banned.get('tone', '')
 
-                all_recent_keywords = set()
-                for p in recent_posts:
-                    all_recent_keywords.update(extract_keywords(p))
-                banned_words = sorted(all_recent_keywords)[:15]
-
-                banned_openers = self.opener_pool[:5] if self.opener_pool else []
-                banned_openers_str = ' / '.join([f'"{o}"' for o in banned_openers]) if banned_openers else '없음'
+                tone_guide = ""
+                if prev_tone:
+                    tone_guide = f"- 최근 톤이 '{prev_tone}'이었으니, 다른 톤(가벼움/유머/실용적 등)으로 시도해보세요"
 
                 anti_repetition = f"""
-### ⚠️ 중복 방지 (매우 중요 - 반드시 지켜야 함):
-최근 내가 쓴 글들:
-{recent_summary}
+### 🚫 다양성 규칙 (매우 중요 - 반드시 지켜야 함):
 
-**금지된 단어들** (최근 사용함, 절대 쓰지 마세요):
-{', '.join(banned_words)}
+**금지된 주제/소재** (최근에 다뤘음, 절대 언급 금지):
+{topics_str}
 
-**금지된 시작 패턴** (다른 방식으로 시작하세요):
-{banned_openers_str}
+**금지된 시작 표현** (다른 방식으로 시작하세요):
+{openers_str}
 
-**작성 원칙**:
-1. 위 금지 단어를 하나도 쓰지 않기
-2. 완전히 새로운 주제로 작성
-3. 다른 시작 패턴 사용
+**금지된 표현들** (최근 자주 씀, 사용 금지):
+{exprs_str}
+
+**다양성 원칙**:
+1. 위 주제들과 완전히 다른 새로운 주제로 작성
+2. 위 시작 표현 대신 완전히 다른 방식으로 시작 (질문, 감탄, 직접 진입 등)
+3. 위 표현들을 하나도 사용하지 않기
+{tone_guide}
 """
 
             prompt = f"""
@@ -439,14 +501,14 @@ class ContentGenerator:
 독백 형태의 트윗을 작성하세요.
 - {config.min_length}~{config.max_length}자 사이로 작성
 - 혼자 생각을 정리하듯이, 독백 느낌으로
-- 페르소나의 말투 특성 반영
+- 페르소나의 말투 특성 반영하되, 새로운 표현 시도
 - 배경지식이 있으면 참고하되, 내 관점으로 표현
 - 반드시 한글만 사용 (한자, 일본어 절대 금지)
-- 최근 글과 다른 새로운 내용으로 작성
+- 🔥 최근 글들과 확실히 다른 새로운 내용과 표현으로 작성
 """
             return llm_client.generate(prompt)
 
-        return self._validate_and_regenerate_post(_generate, config, recent_posts)
+        return self._validate_and_regenerate_post(_generate, config, recent_posts, banned)
 
     def _post_process(self, text: str, config: ContentConfig) -> str:
         text = text.strip()
@@ -491,14 +553,18 @@ class ContentGenerator:
         generate_fn,
         config: ContentConfig,
         recent_posts: List[str],
+        banned: Dict = None,
         max_retries: int = 5,
         similarity_threshold: float = 0.3
     ) -> str:
-        """포스트 전용 검증: 금지 문자 + 유사도 체크 + 리뷰"""
+        """포스트 전용 검증: 금지 문자 + 다양성 체크 + 유사도 체크 + 리뷰"""
+        banned = banned or {}
+
         for attempt in range(max_retries):
             text = generate_fn()
             text = self._post_process(text, config)
 
+            # 1. 금지 문자 체크
             forbidden = get_forbidden_chars(text)
             if forbidden:
                 print(f"[CONTENT] 금지 문자 감지 (시도 {attempt + 1}/{max_retries}): {forbidden}")
@@ -506,6 +572,17 @@ class ContentGenerator:
                     self._add_regeneration_warning(forbidden)
                 continue
 
+            # 2. 다양성 체크 (주제/표현 중복)
+            if banned:
+                is_diverse, reason = self._check_diversity(text, banned)
+                if not is_diverse:
+                    print(f"[DIVERSITY] 실패: {reason} (시도 {attempt + 1}/{max_retries})")
+                    print(f"  - 생성: {text[:60]}...")
+                    if attempt < max_retries - 1:
+                        self._add_diversity_warning(reason)
+                    continue
+
+            # 3. 유사도 체크 (n-gram 기반 안전장치)
             max_sim = 0.0
             most_similar = ""
             for recent in recent_posts:
@@ -522,12 +599,21 @@ class ContentGenerator:
                     self._add_similarity_warning(most_similar)
                 continue
 
+            # 4. 리뷰 및 완료
             text = self._review_content(text, config)
-            print(f"[CONTENT] 포스트 생성 성공 (유사도 {max_sim:.2f})")
+            print(f"[CONTENT] 포스트 생성 성공 (다양성 OK, 유사도 {max_sim:.2f})")
             return text
 
-        print(f"[CONTENT] 재생성 실패, 마지막 결과 사용")
+        print(f"[CONTENT] 재생성 {max_retries}회 실패, 마지막 결과 사용")
         return text
+
+    def _add_diversity_warning(self, reason: str):
+        """다양성 경고 추가"""
+        self._regeneration_warning = f"""
+[중요 경고] 이전 응답이 다양성 규칙을 위반했습니다.
+위반 사항: {reason}
+금지된 주제/표현을 완전히 피하고, 새로운 내용으로 작성하세요.
+"""
 
     def _add_similarity_warning(self, similar_text: str):
         """유사도 경고 추가"""
