@@ -24,7 +24,7 @@ class ImageCritic:
             except Exception as e:
                 print(f"[ImageCritic] Init failed: {e}")
 
-    def evaluate(self, images_data: List[bytes], topic: str, criteria: str) -> Dict[str, Any]:
+    def evaluate(self, images_data: List[bytes], topic: str, criteria: str, system_prompt: str = None) -> Dict[str, Any]:
         """
         후보 이미지 중 Best Cut 선정
         Returns: {"selected_index": 0, "reason": "..."}
@@ -34,9 +34,15 @@ class ImageCritic:
 
         print(f"[ImageCritic] Evaluating {len(images_data)} images for '{topic}'...")
 
-        prompt = f"""
+        if not system_prompt:
+            system_prompt = """
 You are an expert Art Director and Food Photographer.
-I will show you {len(images_data)} candidate images generated for the topic: "{topic}".
+I will show you Several candidate images generated for a specific topic.
+"""
+
+        prompt = f"""
+{system_prompt}
+Topic: "{topic}"
 
 [Criteria]
 {criteria}

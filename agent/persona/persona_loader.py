@@ -7,7 +7,7 @@ import os
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional
 
-PERSONAS_DIR = "config/personas"
+PERSONAS_DIR = "personas"
 
 
 @dataclass
@@ -92,14 +92,26 @@ class PersonaLoader:
             with open(relationships_path, 'r', encoding='utf-8') as f:
                 relationships = yaml.safe_load(f) or {}
 
-        # 선택: signature_series/*.yaml (플랫폼별 전략)
+        # 선택: signature_series/{platform}/{role}.yaml (플랫폼/역할별 전략)
         signature_series = {}
         series_dir = os.path.join(persona_dir, "signature_series")
+        
         if os.path.exists(series_dir) and os.path.isdir(series_dir):
-            for filename in os.listdir(series_dir):
-                if filename.endswith(".yaml"):
-                    platform_name = filename[:-5]  # .yaml 제거
-                    file_path = os.path.join(series_dir, filename)
+            for platform in os.listdir(series_dir):
+                platform_path = os.path.join(series_dir, platform)
+                if os.path.isdir(platform_path):
+                    # 플랫폼별 딕셔너리 생성
+                    signature_series[platform] = {}
+                    for filename in os.listdir(platform_path):
+                        if filename.endswith(".yaml"):
+                            role = filename[:-5]  # .yaml 제거
+                            file_path = os.path.join(platform_path, filename)
+                            with open(file_path, 'r', encoding='utf-8') as f:
+                                signature_series[platform][role] = yaml.safe_load(f) or {}
+                elif platform.endswith(".yaml"):
+                    # 레거시 지원: signature_series/*.yaml (파일인 경우)
+                    platform_name = platform[:-5]
+                    file_path = platform_path
                     with open(file_path, 'r', encoding='utf-8') as f:
                         signature_series[platform_name] = yaml.safe_load(f) or {}
 

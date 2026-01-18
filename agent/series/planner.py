@@ -61,7 +61,7 @@ class SeriesPlanner:
         prompt_text = config.get('prompt', '')
         count = config.get('count_per_fetch', 5)
         
-        system_prompt = "You are a creative content curator. Output ONLY valid JSON array."
+        system_prompt = config.get('system_prompt', "You are a creative content curator. Output ONLY valid JSON array.")
         user_prompt = f"""
 {prompt_text}
 

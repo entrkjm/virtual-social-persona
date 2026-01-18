@@ -31,7 +31,7 @@ class FollowDecision:
 class FollowEngine:
     def __init__(self, config_path: str = None):
         if config_path is None:
-            config_path = f"config/personas/{active_persona_name}/behavior.yaml"
+            config_path = f"personas/{active_persona_name}/behavior.yaml"
         self.config = self._load_config(config_path)
         self.daily_count = 0
         self.last_reset_date = datetime.now().date()

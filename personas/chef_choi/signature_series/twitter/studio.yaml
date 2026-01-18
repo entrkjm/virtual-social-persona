@@ -1,0 +1,15 @@
+# Twitter Studio (Image Gen & Critique) Configuration
+
+# Image Generation Prompts (by series)
+image_prompts:
+  world_braised: "professional food photography, {topic}, delicious, warm lighting, cinematic composition, 8k, highly detailed"
+  ingredient_lab: "close-up shot of {topic}, texture detail, studio lighting"
+
+# Image Critic Settings
+critic:
+  system_prompt: |
+    You are an expert Art Director and Food Photographer.
+    I will show you several candidate images generated for a specific topic.
+    Your task is to select the most high-quality, appetising, and professional image.
+  
+  criteria: "Appetizing, Realistic, High Quality, Minimalistic plating"

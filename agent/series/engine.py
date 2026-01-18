@@ -29,7 +29,8 @@ class SeriesEngine:
         }
 
     def get_enabled_platforms(self) -> List[str]:
-        return [p for p, cfg in self.config.items() if cfg.get('enabled')]
+        # planner.yaml에 설정이 있고 enabled인 경우 활성 플랫폼으로 간주
+        return [p for p, cfg in self.config.items() if cfg.get('planner', {}).get('enabled', True)]
 
     def is_due(self, platform: str, series_id: str) -> bool:
         """
@@ -37,7 +38,8 @@ class SeriesEngine:
         frequency + time_variance 고려
         """
         platform_config = self.config.get(platform, {})
-        series_list = platform_config.get('series', [])
+        planner_config = platform_config.get('planner', {})
+        series_list = planner_config.get('series', [])
         series = next((s for s in series_list if s['id'] == series_id), None)
         
         if not series:
@@ -76,7 +78,8 @@ class SeriesEngine:
         if not platform_config:
             return None
             
-        series_list = platform_config.get('series', [])
+        planner_config = platform_config.get('planner', {})
+        series_list = planner_config.get('series', [])
         candidates = []
         for s in series_list:
             if self.is_due(platform, s['id']):
@@ -103,12 +106,17 @@ class SeriesEngine:
             
         topic = plan['topic']
         
-        # 2. 콘텐츠 생성 (Writer)
-        content = self.content_writer.write(series_name, topic, series_config['template'])
+        # 2. 콘텐츠 생성 (Writer) - writer.yaml에서 해당 시리즈의 프롬프트 로드
+        writer_config = self.config.get(platform, {}).get('writer', {})
+        series_writer_prompt = writer_config.get('series_prompts', {}).get(series_id, {})
         
-        # 3. 이미지 생성 (Studio)
+        # template 필드를 writer_prompt로 대체하여 전달
+        content = self.content_writer.write(series_name, topic, series_writer_prompt)
+        
+        # 3. 이미지 생성 (Studio) - studio.yaml 활용
+        studio_config = self.config.get(platform, {}).get('studio', {})
         images = []
-        image_prompt_tmpl = series_config.get('template', {}).get('image_prompt')
+        image_prompt_tmpl = studio_config.get('image_prompts', {}).get(series_id)
         
         if image_prompt_tmpl:
             prompt = image_prompt_tmpl.replace('{topic}', topic)
@@ -122,8 +130,12 @@ class SeriesEngine:
                 for i, img_bytes in enumerate(candidates):
                     self.archiver.save_asset(series_id, topic, f"candidate_{i+1}.png", img_bytes)
                 
-                # C. Critique
-                result = self.critic.evaluate(candidates, topic, "Appetizing, Realistic, High Quality")
+                # C. Critique - studio.yaml의 critic 가이드 사용
+                critic_config = studio_config.get('critic', {})
+                art_director_prompt = critic_config.get('system_prompt', "You are an expert Art Director.")
+                criteria = critic_config.get('criteria', "Appetizing, Realistic, High Quality")
+
+                result = self.critic.evaluate(candidates, topic, criteria, art_director_prompt)
                 best_idx = result.get('selected_index', 0)
                 
                 # D. Finalize
@@ -143,7 +155,8 @@ class SeriesEngine:
             return None
             
         # adapter.publish는 이미지 경로 리스트를 받아야 함
-        result = adapter.publish(content, images, series_config['template'])
+        # template 대신 planner 내의 series 설정을 전달
+        result = adapter.publish(content, images, series_config)
         
         # 5. 아카이빙 (Archiver)
         if result:
