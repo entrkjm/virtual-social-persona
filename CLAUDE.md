@@ -416,6 +416,81 @@ quip_pool:
 | BREAK | 휴식 중 | 휴식 종료 시간 |
 | OFF_DAY | 오프 데이 | 다음날 0시 |
 
+## Memory System
+
+`agent/memory/` - 품질 경쟁 기반 동적 메모리
+
+### 단기 기억 (Operational)
+**파일**: `agent/json_memory.py` → `agent_memory.json`
+
+| 데이터 | 보관 한계 | 용도 |
+|--------|----------|------|
+| interactions | 최근 100건 | 답글 기록 (중복 방지) |
+| likes | 최근 500건 | 좋아요 기록 |
+| curiosity | 감쇠 적용 | 관심 키워드 카운트 |
+
+### 장기 기억 (Semantic)
+**파일**: `agent/memory/` → `data/memory.db` (SQLite) + `data/chroma/` (Vector)
+
+#### Inspiration 티어 시스템
+```
+ephemeral → short_term → long_term → core
+   30%/일     10%/일       2%/일      영구
+```
+
+**승격 조건**:
+- `ephemeral → short_term`: strength ≥ 0.3
+- `short_term → long_term`: reinforcement ≥ 3회
+- `long_term → core`: reinforcement ≥ 10회
+
+**강화 (Reinforcement)**:
+- 유사 콘텐츠 봄 → +0.1 strength
+- 같은 주제 검색 → +0.05 strength
+- 글로 사용 → +0.3 strength + 3 count
+
+### 품질 경쟁 시스템 (v2)
+**기존**: 티어별 hard limit (100/50/20)
+**변경**: soft ceiling + 하위 % 가속 감쇠
+
+```python
+# tier_manager.py
+MemoryCapacityConfig:
+  soft_ceiling: 500           # 전체 영감 soft ceiling
+  bottom_percentile: 0.10     # 하위 10% 가속 감쇠
+  accelerated_decay_multiplier: 2.0  # 감쇠 2배
+  min_strength_to_survive: 0.05      # 최소 생존 강도
+```
+
+**효과**:
+- 활동 많으면 → 강한 기억 많음 → 용량 자연 증가
+- 활동 적으면 → 약한 기억만 → 자연히 적게 유지
+- 특정 도메인 집중 → 해당 기억이 상대적으로 강함 → 더 많이 생존
+- 티어별 고정 한계 없음 → 사람처럼 경험에 따라 용량 성장
+
+### Core Memory
+`long_term` → `core` 승격 시 생성
+```
+obsession: 집착 주제 (reinforcement ≥ 15)
+opinion: 확고한 의견
+theme: 반복 테마 (used ≥ 3)
+```
+
+### Vector Search
+**파일**: `agent/memory/vector_store.py` → ChromaDB + Gemini Embedding
+
+- Episodes: 경험 임베딩
+- Inspirations: 영감 임베딩 (유사 콘텐츠 강화용)
+- 유사도 threshold: 0.3 (L2 거리)
+
+### Consolidation (정리)
+**파일**: `agent/memory/consolidator.py`
+
+1시간마다 실행:
+1. 모든 영감 강도 계산 (감쇠 적용)
+2. 하위 10% 가속 감쇠 (2배)
+3. min_strength 이하 삭제
+4. 승격/강등 처리
+
 ## Dev Notes
 
 - 페르소나 구조 확정: `config/personas/{name}/` 폴더 기반

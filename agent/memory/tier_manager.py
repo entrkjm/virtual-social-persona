@@ -16,11 +16,19 @@ class TierConfig:
     promotion_threshold_strength: Optional[float]  # 강도 기반 승격 임계값
     promotion_threshold_reinforcement: Optional[int]  # 강화 횟수 기반 승격 임계값
     demotion_threshold: float  # 이 강도 이하면 강등
-    max_count: Optional[int]  # 최대 개수 제한
+
+
+@dataclass
+class MemoryCapacityConfig:
+    """품질 경쟁 기반 동적 용량 설정"""
+    soft_ceiling: int = 500  # 전체 영감 soft ceiling (비용/성능 가드레일)
+    bottom_percentile: float = 0.10  # 하위 N% 가속 감쇠 대상
+    accelerated_decay_multiplier: float = 2.0  # 가속 감쇠 배율
+    min_strength_to_survive: float = 0.05  # 이 이하면 무조건 삭제
 
 
 class TierManager:
-    """티어 승격/강등 및 강도 관리"""
+    """티어 승격/강등 및 강도 관리 (품질 경쟁 기반)"""
 
     TIER_ORDER = ['ephemeral', 'short_term', 'long_term', 'core']
 
@@ -29,31 +37,29 @@ class TierManager:
             decay_rate_per_day=0.7,  # 하루에 30% 감쇠
             promotion_threshold_strength=0.3,
             promotion_threshold_reinforcement=None,
-            demotion_threshold=0.05,
-            max_count=None
+            demotion_threshold=0.05
         ),
         'short_term': TierConfig(
             decay_rate_per_day=0.9,  # 하루에 10% 감쇠
             promotion_threshold_strength=None,
             promotion_threshold_reinforcement=3,
-            demotion_threshold=0.1,
-            max_count=100
+            demotion_threshold=0.1
         ),
         'long_term': TierConfig(
             decay_rate_per_day=0.98,  # 하루에 2% 감쇠
             promotion_threshold_strength=None,
             promotion_threshold_reinforcement=10,
-            demotion_threshold=0.2,
-            max_count=50
+            demotion_threshold=0.2
         ),
         'core': TierConfig(
             decay_rate_per_day=1.0,  # 감쇠 없음
             promotion_threshold_strength=None,
             promotion_threshold_reinforcement=None,
-            demotion_threshold=0.0,  # 강등 없음
-            max_count=20
+            demotion_threshold=0.0  # 강등 없음
         )
     }
+
+    CAPACITY_CONFIG = MemoryCapacityConfig()
 
     def calculate_current_strength(self, insp: Inspiration) -> float:
         """현재 시점의 실제 강도 계산 (감쇠 적용)"""
@@ -154,16 +160,17 @@ class TierManager:
 
         return action
 
-    def get_tier_limits_exceeded(self, tier_counts: Dict[str, int]) -> Dict[str, int]:
-        """티어별 초과 개수 반환"""
-        exceeded = {}
+    def get_bottom_percentile_count(self, total_count: int) -> int:
+        """하위 N% 개수 계산"""
+        return max(1, int(total_count * self.CAPACITY_CONFIG.bottom_percentile))
 
-        for tier, count in tier_counts.items():
-            config = self.TIER_CONFIG.get(tier)
-            if config and config.max_count and count > config.max_count:
-                exceeded[tier] = count - config.max_count
+    def is_over_soft_ceiling(self, total_count: int) -> bool:
+        """soft ceiling 초과 여부"""
+        return total_count > self.CAPACITY_CONFIG.soft_ceiling
 
-        return exceeded
+    def get_accelerated_decay_rate(self, base_decay: float) -> float:
+        """가속 감쇠율 계산"""
+        return base_decay ** self.CAPACITY_CONFIG.accelerated_decay_multiplier
 
     def create_core_memory_from_inspiration(self, insp: Inspiration) -> CoreMemory:
         """영감을 Core Memory로 변환"""

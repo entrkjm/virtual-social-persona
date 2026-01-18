@@ -22,7 +22,8 @@ class ConsolidationStats:
     deleted: int
     demoted: int
     promoted: int
-    tier_enforced: int
+    accelerated_decay_applied: int
+    over_soft_ceiling: bool
     duration_ms: int
 
 
@@ -50,7 +51,7 @@ class MemoryConsolidator:
         self.last_run: Optional[datetime] = None
 
     def run(self) -> ConsolidationStats:
-        """정리 실행 (주기적으로 호출)
+        """정리 실행 (주기적으로 호출) - 품질 경쟁 기반
 
         Returns:
             정리 결과 통계
@@ -61,20 +62,51 @@ class MemoryConsolidator:
             'deleted': 0,
             'demoted': 0,
             'promoted': 0,
-            'tier_enforced': 0
+            'accelerated_decay_applied': 0
         }
 
-        # 1. 모든 영감 순회하며 강도 업데이트 + 승격/강등
         all_inspirations = self.db.get_all_inspirations()
+        total_count = len(all_inspirations)
 
+        over_soft_ceiling = self.tier_manager.is_over_soft_ceiling(total_count)
+        if over_soft_ceiling:
+            print(f"[CONSOLIDATION] Over soft ceiling: {total_count}/{self.tier_manager.CAPACITY_CONFIG.soft_ceiling}")
+
+        # 1. 강도 계산 및 정렬 (품질 경쟁)
+        strength_map = []
         for insp in all_inspirations:
-            # 현재 강도 계산
             current_strength = self.tier_manager.calculate_current_strength(insp)
+            strength_map.append((insp, current_strength))
+
+        strength_map.sort(key=lambda x: x[1])
+
+        # 2. 하위 N% 식별
+        bottom_count = self.tier_manager.get_bottom_percentile_count(total_count)
+        bottom_inspirations = set(insp.id for insp, _ in strength_map[:bottom_count])
+
+        # 3. 모든 영감 처리
+        for insp, current_strength in strength_map:
+            is_bottom = insp.id in bottom_inspirations
+
+            # 하위 N%는 가속 감쇠 적용
+            if is_bottom and insp.tier != 'core':
+                config = self.tier_manager.TIER_CONFIG[insp.tier]
+                accelerated_decay = self.tier_manager.get_accelerated_decay_rate(config.decay_rate_per_day)
+                current_strength *= accelerated_decay
+                stats['accelerated_decay_applied'] += 1
+
             insp.strength = current_strength
 
-            # 강등/삭제 체크
-            action = self.tier_manager.demote_or_delete(insp, current_strength)
+            # 최소 생존 강도 이하면 삭제
+            if current_strength < self.tier_manager.CAPACITY_CONFIG.min_strength_to_survive:
+                self.db.delete_inspiration(insp.id)
+                if self.vector_store:
+                    self.vector_store.delete_inspiration(insp.id)
+                stats['deleted'] += 1
+                continue
 
+            # 강등 체크
+            action = self.tier_manager.demote_or_delete(insp, current_strength)
             if action == 'delete':
                 self.db.delete_inspiration(insp.id)
                 if self.vector_store:
@@ -88,21 +120,13 @@ class MemoryConsolidator:
             # 승격 체크
             if self.tier_manager.promote(insp):
                 stats['promoted'] += 1
-
-                # Core로 승격 시 페르소나 통합
                 if insp.tier == 'core':
                     core_memory = self.tier_manager.create_core_memory_from_inspiration(insp)
                     self.db.add_core_memory(core_memory)
 
-            # 변경사항 저장
             self.db.update_inspiration(insp)
             self._sync_vector_metadata(insp)
 
-        # 2. 티어별 개수 제한 적용
-        tier_enforced = self._enforce_tier_limits()
-        stats['tier_enforced'] = tier_enforced
-
-        # 완료
         end_time = datetime.now()
         duration_ms = int((end_time - start_time).total_seconds() * 1000)
         self.last_run = end_time
@@ -111,48 +135,13 @@ class MemoryConsolidator:
             deleted=stats['deleted'],
             demoted=stats['demoted'],
             promoted=stats['promoted'],
-            tier_enforced=stats['tier_enforced'],
+            accelerated_decay_applied=stats['accelerated_decay_applied'],
+            over_soft_ceiling=over_soft_ceiling,
             duration_ms=duration_ms
         )
 
         self._log_stats(result)
         return result
-
-    def _enforce_tier_limits(self) -> int:
-        """티어별 최대 개수 초과 시 약한 것부터 강등"""
-        tier_counts = self.db.count_inspirations_by_tier()
-        exceeded = self.tier_manager.get_tier_limits_exceeded(tier_counts)
-
-        total_enforced = 0
-
-        for tier, excess_count in exceeded.items():
-            # 해당 티어에서 강도 낮은 순으로 가져오기
-            weak_inspirations = self.db.get_inspirations_by_tier(
-                tier,
-                order_by="strength ASC",
-                limit=excess_count
-            )
-
-            for insp in weak_inspirations:
-                current_strength = self.tier_manager.calculate_current_strength(insp)
-                action = self.tier_manager.demote_or_delete(insp, current_strength)
-
-                if action == 'delete':
-                    self.db.delete_inspiration(insp.id)
-                    if self.vector_store:
-                        self.vector_store.delete_inspiration(insp.id)
-                elif action in ['demoted', 'keep']:
-                    # 강제 강등
-                    tier_order = self.tier_manager.TIER_ORDER
-                    current_idx = tier_order.index(insp.tier)
-                    if current_idx > 0:
-                        insp.tier = tier_order[current_idx - 1]
-                        self.db.update_inspiration(insp)
-                        self._sync_vector_metadata(insp)
-
-                total_enforced += 1
-
-        return total_enforced
 
     def _sync_vector_metadata(self, insp):
         """Vector Store 메타데이터 동기화"""
@@ -176,7 +165,9 @@ class MemoryConsolidator:
         print(f"  - Deleted: {stats.deleted}")
         print(f"  - Demoted: {stats.demoted}")
         print(f"  - Promoted: {stats.promoted}")
-        print(f"  - Tier enforced: {stats.tier_enforced}")
+        print(f"  - Accelerated decay: {stats.accelerated_decay_applied}")
+        if stats.over_soft_ceiling:
+            print(f"  - WARNING: Over soft ceiling!")
 
     def should_run(self, interval_hours: int = 1) -> bool:
         """실행 필요 여부 확인"""
@@ -187,7 +178,7 @@ class MemoryConsolidator:
         return hours_since >= interval_hours
 
     def get_memory_health(self) -> Dict:
-        """메모리 상태 리포트"""
+        """메모리 상태 리포트 (품질 경쟁 기반)"""
         tier_counts = self.db.count_inspirations_by_tier()
         core_memories = self.db.get_all_core_memories()
 
@@ -196,27 +187,15 @@ class MemoryConsolidator:
             vector_stats = self.vector_store.get_stats()
             vector_count = vector_stats['inspirations_count']
 
-        # 티어별 한계 대비 비율
-        tier_health = {}
-        for tier, config in self.tier_manager.TIER_CONFIG.items():
-            count = tier_counts.get(tier, 0)
-            max_count = config.max_count
-            if max_count:
-                tier_health[tier] = {
-                    'count': count,
-                    'max': max_count,
-                    'usage': f"{count / max_count * 100:.1f}%"
-                }
-            else:
-                tier_health[tier] = {
-                    'count': count,
-                    'max': 'unlimited',
-                    'usage': 'N/A'
-                }
+        total = sum(tier_counts.values())
+        capacity_config = self.tier_manager.CAPACITY_CONFIG
 
         return {
-            'tier_health': tier_health,
-            'total_inspirations': sum(tier_counts.values()),
+            'tier_counts': tier_counts,
+            'total_inspirations': total,
+            'soft_ceiling': capacity_config.soft_ceiling,
+            'ceiling_usage': f"{total / capacity_config.soft_ceiling * 100:.1f}%",
+            'over_ceiling': total > capacity_config.soft_ceiling,
             'vector_count': vector_count,
             'core_memories': len(core_memories),
             'last_consolidation': self.last_run.isoformat() if self.last_run else None
