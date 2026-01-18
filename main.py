@@ -191,11 +191,12 @@ def run_standalone():
                     continue
 
                 roll = random.random()
+                cfg = mode_manager.config
 
-                if roll < 0.80:
+                if roll < cfg.scout_probability:
                     action_name = "scout_timeline"
                     status, message, data = social_agent.scout_and_respond()
-                elif roll < 0.95:
+                elif roll < cfg.scout_probability + cfg.mentions_probability:
                     action_name = "check_mentions"
                     status, message, data = social_agent.check_mentions()
                 else:

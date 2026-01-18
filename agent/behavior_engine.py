@@ -505,8 +505,8 @@ class BehaviorEngine:
                 mood_state=self.current_mood
             )
 
-        # 상호작용하기로 결정
-        suggested_action = self.decide_action_type()
+        # 상호작용하기로 결정 (suggested_action은 레거시, bot.py에서 decide_actions() 직접 사용)
+        suggested_action = "INTERACT"
 
         # 집착 주제면 더 적극적으로
         if self._is_obsession_topic(topics) and suggested_action == "LURK":

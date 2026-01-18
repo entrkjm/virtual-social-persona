@@ -25,6 +25,7 @@ from agent.memory.inspiration_pool import inspiration_pool
 from agent.memory.tier_manager import tier_manager
 from agent.memory.consolidator import memory_consolidator
 from agent.posting.trigger_engine import posting_trigger
+from agent.topic_selector import topic_selector
 
 class SocialAgent:
     def __init__(self):
@@ -286,14 +287,29 @@ class SocialAgent:
             try:
                 trend_keywords = get_trending_topics(count=3)
                 for kw in trend_keywords:
-                    agent_memory.track_keyword(kw)  # 트렌드 → 단기기억
+                    agent_memory.track_keyword(kw)
             except:
                 trend_keywords = []
 
-            all_keywords = core_keywords + time_keywords + curiosity_keywords + trend_keywords
-            search_query = random.choice(all_keywords) if all_keywords else "요리"
+            # inspiration_pool에서 활성 영감 토픽
+            inspiration_topics = []
+            try:
+                for tier in ['short_term', 'long_term']:
+                    for insp in inspiration_pool.get_by_tier(tier)[:3]:
+                        if insp.topic and insp.topic not in inspiration_topics:
+                            inspiration_topics.append(insp.topic)
+            except:
+                pass
 
-            print(f"[SCOUT] query={search_query}")
+            search_query, source = topic_selector.select(
+                core_keywords=core_keywords,
+                time_keywords=time_keywords,
+                curiosity_keywords=curiosity_keywords,
+                trend_keywords=trend_keywords,
+                inspiration_topics=inspiration_topics
+            )
+
+            print(f"[SCOUT] query={search_query} (source={source})")
             results = search_tweets(search_query, count=8)
             if not results:
                 return FunctionResultStatus.DONE, "No tweets found", {}

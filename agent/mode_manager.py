@@ -22,10 +22,14 @@ class ModeConfig:
     warmup_steps: int
     sleep_enabled: bool
     random_breaks: bool
-    # 확률은 Optional - None이면 페르소나 값 사용
+    # step 확률 (scout + mentions + post = 1.0)
+    scout_probability: float = 0.80
+    mentions_probability: float = 0.15
+    post_probability: float = 0.05
+    # action 확률 (Optional - None이면 페르소나 값 사용)
     like_probability: Optional[float] = None
-    comment_probability: Optional[float] = None
     repost_probability: Optional[float] = None
+    comment_probability: Optional[float] = None
 
 
 MODE_CONFIGS: Dict[AgentMode, ModeConfig] = {
@@ -35,8 +39,11 @@ MODE_CONFIGS: Dict[AgentMode, ModeConfig] = {
         step_interval_max=180,
         warmup_steps=5,
         sleep_enabled=True,
-        random_breaks=True
-        # 확률 None → 페르소나 값 사용
+        random_breaks=True,
+        scout_probability=0.80,
+        mentions_probability=0.15,
+        post_probability=0.05
+        # action 확률 None → 페르소나 값 사용
     ),
     # test: 중간 속도, 확률 오버라이드 (테스트)
     AgentMode.TEST: ModeConfig(
@@ -45,20 +52,27 @@ MODE_CONFIGS: Dict[AgentMode, ModeConfig] = {
         warmup_steps=2,
         sleep_enabled=False,
         random_breaks=False,
-        like_probability=0.50,
-        comment_probability=0.10,
-        repost_probability=0.15
+        scout_probability=0.75,
+        mentions_probability=0.15,
+        post_probability=0.10,
+        like_probability=0.45,
+        repost_probability=0.45,
+        comment_probability=0.12
     ),
     # aggressive: 빠른 속도, 높은 확률 (개발)
+    # like = repost > comment >> post
     AgentMode.AGGRESSIVE: ModeConfig(
         step_interval_min=8,
         step_interval_max=20,
         warmup_steps=0,
         sleep_enabled=False,
         random_breaks=False,
-        like_probability=0.70,
-        comment_probability=0.15,
-        repost_probability=0.25
+        scout_probability=0.70,
+        mentions_probability=0.15,
+        post_probability=0.15,
+        like_probability=0.60,
+        repost_probability=0.60,
+        comment_probability=0.18
     )
 }
 
