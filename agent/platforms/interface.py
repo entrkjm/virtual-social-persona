@@ -6,12 +6,16 @@ from datetime import datetime
 @dataclass
 class SocialUser:
     id: str
-    username: str  # @handle
-    name: str      # Display Name
+    username: str
+    name: str = ""
     bio: str = ""
     followers_count: int = 0
     following_count: int = 0
     is_verified: bool = False
+    profile_image_url: str = ""
+    created_at: Optional[datetime] = None
+    following_me: bool = False
+    raw_data: dict = field(default_factory=dict)
 
 @dataclass
 class SocialPost:
@@ -19,10 +23,12 @@ class SocialPost:
     text: str
     user: SocialUser
     created_at: datetime
-    metrics: Dict[str, int] = field(default_factory=lambda: {"likes": 0, "reposts": 0, "replies": 0})
     url: str = ""
-    is_reply: bool = False
+    metrics: dict = field(default_factory=dict)  # likes, reposts, replies
     reply_to_id: Optional[str] = None
+    quoted_post_id: Optional[str] = None
+    is_reply: bool = False
+    is_quote: bool = False
     media_urls: List[str] = field(default_factory=list)
     raw_data: Dict[str, Any] = field(default_factory=dict) # Platform specific raw data
 

@@ -19,6 +19,8 @@ from agent.platforms.twitter.modes.social.reply_generator import SocialReplyGene
 from typing import Tuple, Dict, Any, Optional, List
 from datetime import datetime
 import random
+import uuid
+import time
 
 # Dynamic Memory (v2)
 from agent.memory.factory import MemoryFactory  # Changed import
@@ -28,7 +30,7 @@ from agent.memory.tier_manager import TierManager
 from agent.memory.consolidator import MemoryConsolidator
 from agent.platforms.twitter.modes.casual.trigger_engine import PostingTriggerEngine
 from agent.core.topic_selector import TopicSelector
-from agent.knowledge.knowledge_base import KnowledgeBase
+from agent.knowledge.knowledge_base import knowledge_base
 from agent.platforms.twitter.modes.series.engine import SeriesEngine
 from agent.persona.pattern_tracker import PatternTracker
 
@@ -78,26 +80,12 @@ class SocialAgent:
         )
         self.topic_selector = TopicSelector()
         
-        # Series Engine 초기화
+        # Core Intelligence Injection
+        self.interaction_intelligence = interaction_intelligence
+        self.follow_engine = follow_engine
+        
         # Series Engine 초기화
         self.series_engine = SeriesEngine(self.persona)
-
-    def _post_to_dict(self, post: SocialPost) -> Dict:
-        """Convert SocialPost object to dictionary for legacy logic compatibility"""
-        return {
-            "id": post.id,
-            "user": post.user.username,
-            "user_id": post.user.id,
-            "text": post.text,
-            "created_at": post.created_at,
-            "engagement": {
-                "favorite_count": post.metrics.get('likes', 0),
-                "retweet_count": post.metrics.get('reposts', 0),
-                "reply_count": post.metrics.get('replies', 0),
-                "quote_count": 0
-            },
-            "raw_data": post.raw_data
-        }
 
     def _get_current_mood(self):
         """시간대별 기분 / Time-based mood"""
@@ -354,81 +342,93 @@ class SocialAgent:
                 print(f"[HUMAN-LIKE] 멘션 액션 제한: {reason}")
                 return FunctionResultStatus.DONE, f"SKIP (human-like): {reason}", {'human_like_skip': True}
             
-            mentions_data = self.adapter.get_mentions(count=10)
-            mentions = [self._post_to_dict(m) for m in mentions_data]
+            mentions = self.adapter.get_mentions(count=10)
             
             if not mentions:
                 return FunctionResultStatus.DONE, "No new mentions", {}
 
-            responded_ids = agent_memory.get_responded_tweet_ids()
-            new_mentions = [m for m in mentions if m['id'] not in responded_ids]
-
-            if not new_mentions:
-                return FunctionResultStatus.DONE, "No unprocessed mentions", {}
-
-            mention = new_mentions[0]
-            print(f"[MENTION] @{mention['user']}: {mention['text'][:50]}...")
-
-            perception = interaction_intelligence.perceive_tweet(
-                tweet_text=mention['text'],
-                user_handle=f"@{mention['user']}"
-            )
-
-            actions = behavior_engine.decide_actions(perception=perception, tweet=mention)
             actions_taken = []
+            
+            for mention in mentions:
+                # 1. 지각 (Perception)
+                print(f"[MENTION] Analyzing: {mention.text}")
+                perception = self.interaction_intelligence.perceive_post(mention)
+                
+                if perception.get('skipped'):
+                    print(f"[MENTION] Skipped: {perception['skip_reason']}")
+                    continue
 
-            if actions['like']:
-                try:
-                    if self.adapter.like(mention['id']):
-                        human_like_controller.record_action('like')
-                        actions_taken.append("LIKED")
-                        human_like_controller.apply_action_delay('like')
-                except Exception as e:
-                    if '226' in str(e):
-                        human_like_controller.handle_error(226)
-                        return FunctionResultStatus.DONE, "Error 226: 일시정지", {'error': 226}
-                    raise
-
-            if actions_taken and actions['comment']:
-                human_like_controller.apply_between_actions_delay()
-
-            if actions['comment']:
-                relationship_context = self.relationship_manager.get_relationship_context(f"@{mention['user']}")
+                tweet = {
+                    'text': mention.text,
+                    'user': mention.user.username
+                } # context for judge
+                    
                 context = {
-                    'system_prompt': self.full_system_prompt,
-                    'mood': self._get_current_mood(),
-                    'interests': agent_memory.get_top_interests(limit=10),
-                    'relationship': relationship_context
+                    'tweet': tweet,
+                    'perception': perception,
+                    'relationship': self.relationship_manager.get_relationship_context(mention.user.username),
+                    'persona_mood': self._get_current_mood(),
+                    'curiosity': agent_memory.get_top_interests(limit=3),
+                    'interaction_history': agent_memory.get_recent_episodes(limit=5)
                 }
-                reply_content = self.reply_generator.generate(
-                    target_tweet={"user": mention['user'], "text": mention['text']},
-                    perception=perception,
-                    context=context
-                )
 
-                if reply_content:
+                # 2. 행동 결정 (Decision)
+                decision = behavior_engine.should_interact(context)
+                should_act = (decision.decision == "INTERACT")
+                reason = decision.reason
+                actions = decision.actions
+
+                if not should_act:
+                    continue
+
+                # 3. 행동 실행 (Execution)
+                if actions['like']:
                     try:
-                        tweet_id = self.adapter.reply(mention['id'], reply_content)
-                        if tweet_id and "Failed" not in str(tweet_id):
-                            human_like_controller.record_action('comment')
-                            actions_taken.append(f"REPLIED: {reply_content}")
-                            human_like_controller.apply_action_delay('comment')
-                            # DB에 답글 기록
-                            self.memory_db.add_posting(
-                                inspiration_id=None,
-                                content=reply_content,
-                                trigger_type="mention_reply"
-                            )
+                        if self.adapter.like(mention.id):
+                            human_like_controller.record_action('like')
+                            actions_taken.append("LIKED")
+                            human_like_controller.apply_action_delay('like')
                     except Exception as e:
-                        if '226' in str(e):
-                            human_like_controller.handle_error(226)
-                            return FunctionResultStatus.DONE, "Error 226: 일시정지", {'error': 226}
-                        raise
+                        print(f"Like failed: {e}")
 
-            agent_memory.mark_tweet_responded(mention['id'])
+                reply_content = None
+                if actions.get('comment') or actions.get('reply'):
+                    # 답글 생성
+                    reply_content = self.reply_generator.generate(
+                        target_tweet=tweet,
+                        perception=perception,
+                        context={
+                            'system_prompt': self.full_system_prompt,
+                            'mood': self._get_current_mood(),
+                            'interests': agent_memory.get_top_interests(limit=10)
+                        }
+                    )
+
+                    if reply_content:
+                        try:
+                            tweet_id = self.adapter.reply(mention.id, reply_content)
+                            if tweet_id and "Failed" not in str(tweet_id):
+                                human_like_controller.record_action('comment')
+                                actions_taken.append(f"REPLIED: {reply_content}")
+                                human_like_controller.apply_action_delay('comment')
+                                
+                                # 에피소드 저장
+                                self.memory_db.add_episode(Episode(
+                                    id=str(uuid.uuid4()),
+                                    timestamp=datetime.now(),
+                                    type='replied',
+                                    source_id=mention.id,
+                                    source_user=mention.user.username,
+                                    content=reply_content,
+                                    topics=perception['topics'],
+                                    sentiment=perception['sentiment'],
+                                    emotional_impact=0.6
+                                ))
+                        except Exception as e:
+                            print(f"Reply failed: {e}")
 
             if not actions_taken:
-                return FunctionResultStatus.DONE, f"Processed mention from @{mention['user']} (no action)", {}
+                return FunctionResultStatus.DONE, f"Processed mention from @{mention.user.username} (no action)", {}
 
             return FunctionResultStatus.DONE, f"Mention response: {', '.join(actions_taken)}", {"actions": actions_taken}
 
@@ -495,180 +495,157 @@ class SocialAgent:
             
             # Use Adapter
             posts = self.adapter.search(search_query, count=8)
-            results = [self._post_to_dict(p) for p in posts]
             
-            if not results:
+            if not posts:
                 return FunctionResultStatus.DONE, "No tweets found", {}
 
-            # 전체 트윗 평가 및 점수화
-            scored_tweets = []
-            for tweet in results:
-                text = tweet.get('text', '').lower()
-                words = [w.strip() for w in text.split() if len(w) > 2 and w.isalpha()]
-                for word in words[:3]:
-                    agent_memory.track_keyword(word, source="tweet")
+            candidates = []
+            
+            candidates = []
+            
+            print(f"[SCOUT] Analyzing {len(posts)} posts (Batch)...")
 
-                tweet_perception = interaction_intelligence.perceive_tweet(
-                    tweet_text=tweet['text'],
-                    user_handle=f"@{tweet['user']}"
-                )
-                
-                # 쓰레기 필터링 (언어/스팸)
-                if tweet_perception.get('skipped'):
-                    print(f"[SCOUT] Skipped {tweet['user']}: {tweet_perception.get('skip_reason')}")
+            # 1. Batch Perception
+            perceptions = self.interaction_intelligence.batch_perceive_tweets(posts)
+
+            for i, perception in enumerate(perceptions):
+                if i >= len(posts): break
+                post = posts[i]
+
+                if perception.get('skipped'):
+                    # print(f"[SCOUT] Skipped {post.user.username}: {perception['skip_reason']}")
                     continue
-                    
-                tweet_score = self._calculate_tweet_score(tweet, tweet_perception)
-                scored_tweets.append((tweet, tweet_perception, tweet_score))
+                
+                # 에피소드 저장 (본 것)
+                self.memory_db.add_episode(Episode(
+                    id=str(uuid.uuid4()),
+                    timestamp=datetime.now(),
+                    type='saw_tweet',
+                    source_id=post.id,
+                    source_user=post.user.username,
+                    content=post.text,
+                    topics=perception.get('topics', []),
+                    sentiment=perception.get('sentiment', 'neutral'),
+                    emotional_impact=0.3
+                ))
+                
+                tweet_dict = {
+                    'text': post.text,
+                    'user': post.user.username,
+                    'id': post.id
+                }
 
-            if not scored_tweets:
-                return FunctionResultStatus.DONE, "No valid tweets found (all filtered)", {}
+                context = {
+                    'tweet': tweet_dict,
+                    'perception': perception,
+                    'topic_relevance': perception.get('relevance_to_domain', 0.0),
+                    'relationship': self.relationship_manager.get_relationship_context(post.user.username),
+                    'persona_mood': self._get_current_mood()
+                }
 
-            scored_tweets.sort(key=lambda x: x[2], reverse=True)
-            target, perception, score = scored_tweets[0]
+                # 2. 점수 계산 (Scoring)
+                from agent.platforms.twitter.modes.social.behavior_engine import behavior_engine
+                score = behavior_engine.calculate_interaction_score(context)
+                
+                # 후보군 등록
+                candidates.append({
+                    'score': score,
+                    'post': post,
+                    'context': context
+                })
 
-            eng = target.get('engagement', {})
-            print(f"[TARGET] @{target['user']} (score={score:.2f}, likes={eng.get('favorite_count', 0)}, rel={perception.get('relevance_to_domain', 0):.1f})")
+            if not candidates:
+                return FunctionResultStatus.DONE, "No valid candidates found after filtering", {}
 
-            # MEMORY
-            emotional_impact = self._calculate_emotional_impact(perception)
-            episode = self._record_episode(target, perception, emotional_impact)
+            # 3. 최선의 선택 (Selection)
+            # 점수순 정렬
+            candidates.sort(key=lambda x: x['score'], reverse=True)
+            best = candidates[0]
+            
+            print(f"[SCOUT] Best candidate: @{best['post'].user.username} (Score: {best['score']:.2f})")
+            
+            # 행동 결정 (Decision)
+            decision = behavior_engine.should_interact(best['context'])
+            should_act = (decision.decision == "INTERACT")
+            reason = decision.reason
+            actions = decision.actions
+            
+            if not should_act:
+                 return FunctionResultStatus.DONE, f"Best candidate skipped: {reason}", {}
 
-            # 영감 생성 (impact 높고 내 관점이 있을 때)
-            my_angle = perception.get('my_angle', '')
-            if emotional_impact >= 0.6 and my_angle:
-                self._create_inspiration_from_episode(episode, my_angle)
-                print(f"[INSPIRATION] 새 영감 생성: {my_angle[:30]}...")
-
-            reinforcement_trigger = self.inspiration_pool.on_content_seen(
-                content=target['text'],
-                emotional_impact=emotional_impact
-            )
-            if reinforcement_trigger:
-                print(f"[REINFORCE] {reinforcement_trigger.reason}")
-
-            trigger_context = {
-                'current_episode': episode,
-                'reinforcement_trigger': reinforcement_trigger
-            }
-            posting_decision = self.posting_trigger.check_trigger(trigger_context)
-            if posting_decision:
-                print(f"[TRIGGER] {posting_decision.type}")
-
-            for topic in perception['topics']:
-                agent_memory.track_keyword(topic, source="perception")
-
-            # RELATIONSHIP
-            relationship_context = self.relationship_manager.get_relationship_context(f"@{target['user']}")
-
-            # BEHAVIOR
-            behavior_context = {
-                "tweet": {"user": target['user'], "id": target['id'], "text": target['text']},
-                "perception": perception,
-                "relationship": relationship_context,
-                "current_time": datetime.now()
-            }
-            behavior_decision = behavior_engine.should_interact(behavior_context)
-            print(f"[BEHAVIOR] {behavior_decision.decision} ({behavior_decision.mood_state:.2f})")
-
-            if behavior_decision.decision == "SKIP":
-                return FunctionResultStatus.DONE, f"SKIP: {behavior_decision.reason}", {}
-
-            # 독립 확률로 각 행동 결정 (관련도/인기도 기반)
-            actions = behavior_engine.decide_actions(perception=perception, tweet=target)
-            print(f"[ACTIONS] like={actions['like']}, repost={actions['repost']}, comment={actions['comment']}")
-
+            # 4. 행동 실행 (Execution) - Winner Takes All
+            post = best['post']
             actions_taken = []
+
+            # Reading Delay (Human-like)
+            delay = random.uniform(2.0, 5.0) # 조금 더 신중하게 읽음
+            print(f"[WAIT] Reading best tweet... ({delay:.1f}s)")
+            time.sleep(delay)
+            print(f"[DECISION] Result: {should_act}, Actions: {actions}")
 
             # LIKE
             if actions['like']:
+                print(f"[ACTION] Attempting LIKE on {post.id}...")
                 try:
-                    if favorite_tweet(target['id']):
-                        agent_memory.add_like(target['id'])
-                        behavior_engine.record_interaction(target['user'], target['id'], "LIKE")
+                    if self.adapter.like(post.id):
+                        print(f"[ACTION] LIKE Success")
                         human_like_controller.record_action('like')
                         actions_taken.append("LIKED")
                         human_like_controller.apply_action_delay('like')
+                        agent_memory.add_interaction(post.user.username, post.text, "LIKE", tweet_id=post.id)
+                    else:
+                        print(f"[ACTION] LIKE Failed (API returned False)")
                 except Exception as e:
-                    if '226' in str(e):
-                        human_like_controller.handle_error(226)
-                        return FunctionResultStatus.DONE, "Error 226: 일시정지", {'error': 226}
-                    raise
-
-            # 액션 간 지연
-            if actions_taken and (actions['repost'] or actions['comment']):
-                human_like_controller.apply_between_actions_delay()
+                    print(f"Like failed: {e}")
 
             # REPOST
             if actions['repost']:
                 try:
-                    if self.adapter.repost(target['id']):
-                        behavior_engine.record_interaction(target['user'], target['id'], "REPOST")
+                    if self.adapter.repost(post.id):
+                        behavior_engine.record_interaction(post.user.username, post.id, "REPOST")
                         human_like_controller.record_action('repost')
                         actions_taken.append("REPOSTED")
-                        human_like_controller.apply_action_delay('like')
+                        human_like_controller.apply_action_delay('repost')
                 except Exception as e:
-                    if '226' in str(e):
-                        human_like_controller.handle_error(226)
-                        return FunctionResultStatus.DONE, "Error 226: 일시정지", {'error': 226}
-                    raise
+                    print(f"Repost failed: {e}")
 
-            # 액션 간 지연
-            if actions_taken and actions['comment']:
-                human_like_controller.apply_between_actions_delay()
-
-            # COMMENT - reply_generator로 답글 생성
-            if actions['comment']:
-                context = {
-                    'system_prompt': self.full_system_prompt,
-                    'mood': self._get_current_mood(),
-                    'interests': agent_memory.get_top_interests(limit=10),
-                    'relationship': relationship_context
-                }
+            # REPLY
+            reply_content = None
+            if actions.get('comment') or actions.get('reply'):
                 reply_content = self.reply_generator.generate(
-                    target_tweet={"user": target['user'], "text": target['text']},
-                    perception=perception,
-                    context=context
+                    target_tweet=best['context']['tweet'],
+                    perception=best['context']['perception'],
+                    context={
+                        'system_prompt': self.full_system_prompt,
+                        'mood': self._get_current_mood(),
+                        'interests': agent_memory.get_top_interests(limit=10)
+                    }
                 )
 
-                if reply_content:
-                    try:
-                        tweet_id = self.adapter.reply(target['id'], reply_content)
+            if reply_content:
+                print(f"[ACTION] Attempting REPLY to {post.id}: {reply_content}")
+                try:
+                    tweet_id = self.adapter.reply(post.id, reply_content)
 
-                        if tweet_id and "Failed" not in str(tweet_id):
-                            agent_memory.add_interaction(target['user'], target['text'], reply_content, tweet_id=target['id'])
-                            behavior_engine.record_interaction(target['user'], target['id'], "REPLY")
-                            human_like_controller.record_action('comment')
-                            actions_taken.append(f"REPLIED: {reply_content}")
-                            human_like_controller.apply_action_delay('comment')
-                            # DB에 답글 기록
-                            self.memory_db.add_posting(
-                                inspiration_id=None,
-                                content=reply_content,
-                                trigger_type="timeline_reply"
-                            )
-
-                            self.relationship_manager.update_relationship(
-                                f"@{target['user']}",
-                                {
-                                    "sentiment": perception['sentiment'],
-                                    "topics": perception['topics']
-                                }
-                            )
-                    except Exception as e:
-                        if '226' in str(e):
-                            human_like_controller.handle_error(226)
-                            return FunctionResultStatus.DONE, "Error 226: 일시정지", {'error': 226}
-                        raise
+                    if tweet_id and "Failed" not in str(tweet_id):
+                        print(f"[ACTION] REPLY Success: {tweet_id}")
+                        agent_memory.add_interaction(post.user.username, post.text, reply_content, tweet_id=post.id)
+                        behavior_engine.record_interaction(post.user.username, post.id, "REPLY")
+                        
+                        actions_taken.append(f"REPLIED: {reply_content}")
+                        human_like_controller.record_action('comment')
+                        human_like_controller.apply_action_delay('comment')
+                except Exception as e:
+                    print(f"Reply failed: {e}")
 
             # FOLLOW 판단
-            self._evaluate_follow(target)
+            self._evaluate_follow(post)
 
             if not actions_taken:
-                return FunctionResultStatus.DONE, "LURKED (no action taken)", {}
+                return FunctionResultStatus.DONE, "LURKED (action selected but failed or silent)", {}
 
             summary = ", ".join(actions_taken)
-            return FunctionResultStatus.DONE, f"Success: {summary}", {"actions": actions_taken}
+            return FunctionResultStatus.DONE, f"Success on best tweet: {summary}", {"actions": actions_taken}
 
         except Exception as e:
             return FunctionResultStatus.FAILED, f"Error: {str(e)}", {}
@@ -676,34 +653,21 @@ class SocialAgent:
     def _evaluate_follow(self, tweet: Dict):
         """상호작용 후 팔로우 판단"""
         try:
-            user_handle = tweet.get('user', '')
-            user_id = tweet.get('user_id')
+            user_handle = tweet.user.username
+            user_id = tweet.user.id
 
-            if not user_id:
-                user_obj = self.adapter.get_user(username=user_handle)
-                if not user_obj:
-                    return
-                user_id = user_obj.id
-                profile = {
-                    'id': user_obj.id,
-                    'screen_name': user_obj.username,
-                    'name': user_obj.name,
-                    'description': user_obj.bio,
-                    'followers_count': user_obj.followers_count,
-                    'following_count': user_obj.following_count
-                }
-            else:
-                user_obj = self.adapter.get_user(user_id=user_id)
-                if not user_obj:
-                    return
-                profile = {
-                    'id': user_obj.id,
-                    'screen_name': user_obj.username,
-                    'name': user_obj.name,
-                    'description': user_obj.bio,
-                    'followers_count': user_obj.followers_count,
-                    'following_count': user_obj.following_count
-                }
+            # ID가 없을 수 있으므로(search 결과) username도 같이 전달
+            user_obj = self.adapter.get_user(user_id=user_id, username=user_handle)
+            if not user_obj:
+                return
+            profile = {
+                'id': user_obj.id,
+                'screen_name': user_obj.username,
+                'name': user_obj.name,
+                'description': user_obj.bio,
+                'followers_count': user_obj.followers_count,
+                'following_count': user_obj.following_count
+            }
 
             if not profile:
                 return
@@ -712,22 +676,23 @@ class SocialAgent:
             interaction_count = agent_memory.get_interaction_count(user_handle)
             context = {'interaction_count': interaction_count}
 
-            decision = follow_engine.should_follow(profile, context)
+            # Follow Engine Decision with SocialUser object
+            decision = self.follow_engine.should_follow(
+                user=user_obj,  # Pass Object
+                interaction_context={'interaction_count': 1}  # Simple context for now
+            )
 
             if decision.should_follow:
-                follow_engine.queue_follow(
-                    user_id=profile.get('id'),
-                    screen_name=profile.get('screen_name', user_handle),
-                    context=context
-                )
-                print(f"[FOLLOW] Queued @{user_handle}: {decision.reason}")
+                print(f"[FOLLOW] Decided to follow {user_handle}: {decision.reason}")
+                self.follow_engine.queue_follow(user_id, user_handle)
+                # 실행은 큐 프로세서가 담당
 
         except Exception as e:
             print(f"[FOLLOW] Evaluate failed: {e}")
 
     def process_follow_queue(self) -> List[Tuple[str, bool, str]]:
         """팔로우 큐 처리 (main.py에서 호출)"""
-        return follow_engine.process_queue(follow_user)
+        return follow_engine.process_queue(self.adapter.follow)
 
     def get_action_space(self):
         return [

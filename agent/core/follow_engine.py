@@ -5,6 +5,7 @@ Follow Engine
 import random
 from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Optional, Any
+from agent.platforms.interface import SocialUser
 from dataclasses import dataclass, field
 import yaml
 from config.settings import settings
@@ -97,29 +98,26 @@ class FollowEngine:
             print("[FOLLOW] Pause ended")
         return False
 
-    def _check_eligibility(self, user: Dict) -> Tuple[bool, str]:
+    def _check_eligibility(self, user: SocialUser) -> Tuple[bool, str]:
         """자격 검증"""
         exclude = self.config.get('exclude', {})
 
         # 이미 팔로우한 유저
-        user_id = user.get('id', user.get('user_id', ''))
-        if user_id in self.followed_users:
+        if user.id in self.followed_users:
             return False, "이미 팔로우함"
 
         # 프로필 이미지 없음
         if exclude.get('no_profile_image', True):
-            if not user.get('profile_image') or 'default' in str(user.get('profile_image', '')).lower():
+            if not user.profile_image_url or 'default' in user.profile_image_url.lower():
                 return False, "프로필 이미지 없음"
 
         # 바이오 없음
         if exclude.get('no_bio', True):
-            bio = user.get('bio', user.get('description', ''))
-            if not bio or len(bio.strip()) < 5:
+            if not user.bio or len(user.bio.strip()) < 5:
                 return False, "바이오 없음"
 
         # 팔로워 비율 체크
         follower_ratio_min = exclude.get('follower_ratio_below', 0.1)
-        followers = user.get('followers_count', 0)
         following = user.get('following_count', user.get('friends_count', 1))
         if following > 0:
             ratio = followers / following

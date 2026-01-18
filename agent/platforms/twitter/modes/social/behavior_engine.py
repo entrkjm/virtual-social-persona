@@ -510,7 +510,22 @@ class BehaviorEngine:
         score = self.calculate_interaction_score(context)
 
         # Binary Decision based on Score vs Random
-        if random.random() > score:
+        # [MODIFIED] Aggressive Mode Logic: Force interaction if score is good enough
+        from agent.core.mode_manager import AgentMode, mode_manager
+        
+        should_interact = False
+        if mode_manager.mode == AgentMode.AGGRESSIVE:
+             # In Aggressive Mode, interact if score > 0.4 (Low entry barrier)
+            if score >= 0.4:
+                should_interact = True
+            else:
+                 # Still give a chance even if score is low
+                should_interact = (random.random() < score)
+        else:
+             # Normal probabilistic Mode
+            should_interact = (random.random() < score)
+
+        if not should_interact:
             reason = self._get_skip_reason(context, score)
             return BehaviorDecision(
                 decision="SKIP",
@@ -530,7 +545,7 @@ class BehaviorEngine:
         elif actions['like']: suggested_action = "LIKE"
 
         return BehaviorDecision(
-            decision="INTERESTED",
+            decision="INTERACT",
             reason=f"Score {score:.2f} passed threshold",
             suggested_action=suggested_action,
             confidence=score,

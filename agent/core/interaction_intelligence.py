@@ -7,6 +7,7 @@ from core.llm import llm_client
 from agent.persona.persona_loader import active_persona
 import json
 from typing import Dict, List
+from agent.platforms.interface import SocialPost
 from enum import Enum
 
 
@@ -21,8 +22,10 @@ class ResponseType(str, Enum):
 class InteractionIntelligence:
 
     @staticmethod
-    def perceive_tweet(tweet_text: str, user_handle: str) -> Dict:
+    def perceive_post(post: SocialPost) -> Dict:
         """Perceive: 트윗 의미/감정/의도 분석 + 응답 유형 결정"""
+        tweet_text = post.text
+        user_handle = post.user.username
         tweet_length = len(tweet_text)
         domain = active_persona.domain
         domain_name = domain.name
@@ -30,7 +33,6 @@ class InteractionIntelligence:
         domain_relevance_desc = domain.relevance_desc
 
         # [PRE-CALCULATION] 1. 언어 필터 (한국어 포함 여부)
-        # TODO: 페르소나 설정에 따라 언어 필터링 여부 결정해야 함. 일단 Chef Choi는 한국어 필수.
         if not InteractionIntelligence._contains_korean(tweet_text):
             return {
                 "topics": [],
@@ -238,13 +240,123 @@ JSON 형식으로 출력 (다른 설명 없이 JSON만):
             }
 
     @staticmethod
-    def batch_perceive_tweets(tweets: List[Dict]) -> List[Dict]:
-        """배치 분석 (현재는 개별 호출) / Batch perceive"""
+    def batch_perceive_tweets(tweets: List[SocialPost]) -> List[Dict]:
+        """배치 분석: 여러 트윗을 한 번의 LLM 호출로 분석"""
         results = []
-        for tweet in tweets:
-            perception = InteractionIntelligence.perceive_tweet(tweet['text'], tweet['user'])
-            results.append(perception)
-        return results
+        candidates_for_llm = []
+        
+        # 1. Pre-filtering (Local)
+        for i, post in enumerate(tweets):
+            tweet_text = post.text
+            tweet_length = len(tweet_text)
+            
+            # 언어 필터
+            if not InteractionIntelligence._contains_korean(tweet_text):
+                results.append({
+                    "id": post.id,
+                    "index": i,
+                    "topics": [],
+                    "sentiment": "neutral",
+                    "intent": "foreign_language",
+                    "relevance_to_domain": 0.0,
+                    "complexity": "simple",
+                    "user_profile_hint": "외국어 사용자",
+                    "my_angle": "",
+                    "tweet_length": tweet_length,
+                    "skipped": True,
+                    "skip_reason": "No Korean text"
+                })
+                continue
+
+            # 스팸 필터
+            if InteractionIntelligence._is_spam(tweet_text):
+                results.append({
+                    "id": post.id,
+                    "index": i,
+                    "topics": [],
+                    "sentiment": "negative",
+                    "intent": "spam",
+                    "relevance_to_domain": 0.0,
+                    "complexity": "simple",
+                    "user_profile_hint": "스팸/광고 계정",
+                    "my_angle": "",
+                    "tweet_length": tweet_length,
+                    "skipped": True,
+                    "skip_reason": "Spam keywords detected"
+                })
+                continue
+            
+            # LLM 후보군 추가
+            candidates_for_llm.append((i, post))
+
+        if not candidates_for_llm:
+            return sorted(results, key=lambda x: x['index'])
+
+        # 2. Batch Prompting
+        domain = active_persona.domain
+        candidates_text = "\n\n".join([
+            f"[{idx}] 작성자: {post.user.username}\n내용: {post.text}"
+            for idx, post in candidates_for_llm
+        ])
+        
+        prompt = f"""
+다음 {len(candidates_for_llm)}개의 트윗을 분석하세요. 각 트윗은 [{candidates_for_llm[0][0]}] 같은 인덱스로 구분됩니다.
+
+트윗 목록:
+{candidates_text}
+
+출력 포맷:
+JSON List 형태로 출력하세요. 각 항목은 다음 필드를 가집니다:
+- index: 입력된 트윗의 인덱스 (정수)
+- topics: 핵심 주제 키워드 리스트
+- sentiment: positive/neutral/negative
+- intent: 질문/공유/불만/칭찬/농담/밈/기타
+- relevance_to_domain: {domain.relevance_desc} (0.0~1.0)
+- complexity: simple/moderate/complex
+- user_profile_hint: 유저 특징 추론 (한 문장)
+- my_angle: {domain.perspective} 관점의 코멘트 (없으면 빈 문자열)
+
+JSON List만 출력하세요.
+"""
+        try:
+            response = llm_client.generate(prompt, system_prompt="You are a batch tweet analyzer.")
+            clean_response = response.replace("```json", "").replace("```", "").strip()
+            
+            # JSON 파싱 시도 (가끔 마크다운이 섞일 수 있음)
+            if '[' not in clean_response:
+                raise ValueError("No JSON list found")
+            
+            # 리스트 부분만 추출
+            start = clean_response.find('[')
+            end = clean_response.rfind(']') + 1
+            json_str = clean_response[start:end]
+            
+            analyzed_list = json.loads(json_str)
+            
+            # 결과 매핑
+            for item in analyzed_list:
+                idx = item.get('index')
+                # 원본 포스트 찾기
+                original_post = next((p for i, p in candidates_for_llm if i == idx), None)
+                if original_post:
+                    item['tweet_length'] = len(original_post.text)
+                    item['response_type'] = InteractionIntelligence._determine_response_type(
+                        item, active_persona.behavior
+                    )
+                    results.append(item)
+
+        except Exception as e:
+            print(f"[BATCH-PERCEIVE] Error: {e}")
+            # 에러 시 남은 후보들 실패 처리
+            for i, post in candidates_for_llm:
+                results.append({
+                    "index": i,
+                    "skipped": True,
+                    "skip_reason": "Batch Analysis Failed"
+                })
+
+        # 인덱스 순 정렬하여 반환 (스키마 맞춤)
+        return sorted(results, key=lambda x: x.get('index', 0))
 
     @staticmethod
     def _contains_korean(text: str) -> bool:

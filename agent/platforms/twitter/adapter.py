@@ -6,45 +6,50 @@ import platforms.twitter.social as twitter_api
 class TwitterAdapter(SocialPlatformAdapter):
     """Adapter for Twitter using platforms.twitter.social"""
 
+    @staticmethod
+    def _parse_date(date_str: str) -> Optional[datetime]:
+        if not date_str: return None
+        try:
+            # Twitter "Wed Oct 10 20:19:24 +0000 2018"
+            return datetime.strptime(date_str, "%a %b %d %H:%M:%S %z %Y")
+        except:
+            try:
+                # ISO format fallback
+                return datetime.fromisoformat(date_str)
+            except:
+                return None
+
     def search(self, query: str, count: int = 10) -> List[SocialPost]:
         results = twitter_api.search_tweets(query, count)
         posts = []
         for item in results:
-            # Convert Dict to SocialPost
+            created_at = item.get('created_at')
+            if isinstance(created_at, str):
+                created_at_dt = self._parse_date(created_at) or datetime.now()
+            elif isinstance(created_at, datetime):
+                created_at_dt = created_at
+            else:
+                created_at_dt = datetime.now()
+
+            # User data in search result is limited, usually just username
             user = SocialUser(
-                id="",  # Twitter search via social.py doesn't return user ID currently
+                id="", 
                 username=item['user'],
-                name=item['user'] # Default to username as name is missing
+                name=item['user'] 
             )
             
-            # Parse metrics
             engagement = item.get('engagement', {})
-            metrics ={
+            metrics = {
                 "likes": engagement.get('favorite_count', 0),
                 "reposts": engagement.get('retweet_count', 0),
                 "replies": engagement.get('reply_count', 0)
             }
             
-            # Parse timestamp if string
-            created_at = item.get('created_at')
-            if isinstance(created_at, str):
-                try:
-                    # Generic parser or specific format? Twikit usually returns string or datetime
-                    # Assuming string for now, if it fails we might need better parsing
-                    # But social.py passes it through. Let's assume it's usable or use current time as fallback
-                    # Actually social.py returns raw object created_at often (datetime) or string
-                    pass 
-                except:
-                    pass
-            if not isinstance(created_at, datetime):
-                # Fallback
-                created_at = datetime.now()
-
             post = SocialPost(
                 id=item['id'],
                 text=item['text'],
                 user=user,
-                created_at=created_at,
+                created_at=created_at_dt,
                 metrics=metrics,
                 url=f"https://twitter.com/{item['user']}/status/{item['id']}",
                 raw_data=item
@@ -56,6 +61,13 @@ class TwitterAdapter(SocialPlatformAdapter):
         results = twitter_api.get_mentions(count)
         posts = []
         for item in results:
+            created_at = None
+            ts = item.get('timestamp')
+            if ts:
+                created_at = datetime.fromtimestamp(ts / 1000.0)
+            else:
+                created_at = datetime.now()
+
             user = SocialUser(
                 id="",
                 username=item['user'],
@@ -66,7 +78,7 @@ class TwitterAdapter(SocialPlatformAdapter):
                 id=item['id'],
                 text=item['text'],
                 user=user,
-                created_at=datetime.fromtimestamp(item.get('timestamp', 0) / 1000.0),
+                created_at=created_at,
                 metrics={},
                 url=f"https://twitter.com/{item['user']}/status/{item['id']}",
                 raw_data=item
@@ -106,6 +118,10 @@ class TwitterAdapter(SocialPlatformAdapter):
         profile = twitter_api.get_user_profile(user_id, username)
         if not profile:
             return None
+            
+        created_at_str = profile.get('created_at')
+        created_at = self._parse_date(created_at_str)
+        
         return SocialUser(
             id=profile.get('id', ''),
             username=profile.get('screen_name', ''),
@@ -113,5 +129,9 @@ class TwitterAdapter(SocialPlatformAdapter):
             bio=profile.get('description', ''),
             followers_count=profile.get('followers_count', 0),
             following_count=profile.get('following_count', 0),
-            is_verified=profile.get('verified', False)
+            is_verified=profile.get('verified', False),
+            profile_image_url=profile.get('profile_image_url', ''),
+            created_at=created_at,
+            following_me=profile.get('following', False), # Twikit naming might vary
+            raw_data=profile
         )
