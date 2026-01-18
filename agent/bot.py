@@ -26,6 +26,7 @@ from agent.memory.tier_manager import tier_manager
 from agent.memory.consolidator import memory_consolidator
 from agent.posting.trigger_engine import posting_trigger
 from agent.topic_selector import topic_selector
+from agent.knowledge_base import knowledge_base
 
 class SocialAgent:
     def __init__(self):
@@ -116,7 +117,7 @@ class SocialAgent:
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         mood = self._get_current_mood()
 
-        top_interests = agent_memory.get_top_interests(limit=3)
+        top_interests = agent_memory.get_top_interests(limit=10)
         interests_text = ", ".join(top_interests) if top_interests else "없음"
 
         try:
@@ -163,17 +164,68 @@ class SocialAgent:
 
     def post_tweet_executable(self, content: str) -> Tuple[FunctionResultStatus, str, Dict[str, Any]]:
         try:
+            # 토픽 선택 (content가 비어있으면 자동 선택)
+            if not content:
+                hour = datetime.now().hour
+                time_kw_config = self.persona.behavior.get('time_keywords', {})
+
+                if 6 <= hour < 11:
+                    time_keywords = time_kw_config.get('morning', [])
+                elif 11 <= hour < 14:
+                    time_keywords = time_kw_config.get('lunch', [])
+                elif 14 <= hour < 17:
+                    time_keywords = time_kw_config.get('afternoon', [])
+                elif 17 <= hour < 21:
+                    time_keywords = time_kw_config.get('dinner', [])
+                else:
+                    time_keywords = time_kw_config.get('late_night', [])
+
+                if not time_keywords:
+                    time_keywords = self.persona.core_keywords
+
+                # 영감 토픽 가져오기
+                inspiration_topics = []
+                try:
+                    for tier in ['short_term', 'long_term']:
+                        for insp in inspiration_pool.get_by_tier(tier)[:3]:
+                            if insp.topic and insp.topic not in inspiration_topics:
+                                inspiration_topics.append(insp.topic)
+                except:
+                    pass
+
+                # 지식 베이스에서 관련 토픽
+                knowledge_topics = knowledge_base.get_relevant_topics(min_relevance=0.2, limit=5)
+
+                topic, source = topic_selector.select(
+                    core_keywords=self.persona.core_keywords,
+                    time_keywords=time_keywords,
+                    curiosity_keywords=agent_memory.get_top_interests(limit=10),
+                    trend_keywords=knowledge_topics,
+                    inspiration_topics=inspiration_topics
+                )
+                print(f"[POST] topic={topic} (source={source})")
+            else:
+                topic = content
+                source = "user"
+
+            # 지식 컨텍스트 조회
+            topic_context = ""
+            knowledge = knowledge_base.get(topic)
+            if knowledge and knowledge.get('my_angle'):
+                topic_context = f"{knowledge.get('summary', '')} / 내 관점: {knowledge['my_angle']}"
+
             context = {
                 'system_prompt': self.full_system_prompt,
                 'mood': self._get_current_mood(),
-                'interests': agent_memory.get_top_interests(limit=3)
+                'interests': agent_memory.get_top_interests(limit=10),
+                'topic_context': topic_context
             }
             generated_content = self.content_generator.generate_post(
-                topic=content,
+                topic=topic,
                 context=context
             )
             twitter_id = post_tweet(generated_content)
-            return FunctionResultStatus.DONE, f"Posted: {generated_content}", {"tweet_id": twitter_id}
+            return FunctionResultStatus.DONE, f"Posted: {generated_content}", {"tweet_id": twitter_id, "topic": topic, "source": source}
         except Exception as e:
             return FunctionResultStatus.FAILED, f"Failed to tweet: {e}", {}
 
@@ -226,7 +278,7 @@ class SocialAgent:
                 context = {
                     'system_prompt': self.full_system_prompt,
                     'mood': self._get_current_mood(),
-                    'interests': agent_memory.get_top_interests(limit=3),
+                    'interests': agent_memory.get_top_interests(limit=10),
                     'relationship': relationship_context
                 }
                 reply_content = self.content_generator.generate_reply(
@@ -291,12 +343,12 @@ class SocialAgent:
             if not time_keywords:
                 time_keywords = core_keywords
 
-            curiosity_keywords = agent_memory.get_top_interests(limit=2)
+            curiosity_keywords = agent_memory.get_top_interests(limit=10)
 
             try:
-                trend_keywords = get_trending_topics(count=3)
+                trend_keywords = get_trending_topics(count=5)
                 for kw in trend_keywords:
-                    agent_memory.track_keyword(kw)
+                    agent_memory.track_keyword(kw, source="trend")
             except:
                 trend_keywords = []
 
@@ -327,7 +379,7 @@ class SocialAgent:
                 text = tweet.get('text', '').lower()
                 words = [w.strip() for w in text.split() if len(w) > 2 and w.isalpha()]
                 for word in words[:5]:
-                    agent_memory.track_keyword(word)
+                    agent_memory.track_keyword(word, source="tweet")
 
             target = random.choice(results)
             print(f"[TARGET] @{target['user']}")
@@ -364,7 +416,7 @@ class SocialAgent:
                 print(f"[TRIGGER] {posting_decision.type}")
 
             for topic in perception['topics']:
-                agent_memory.track_keyword(topic)
+                agent_memory.track_keyword(topic, source="perception")
 
             # RELATIONSHIP
             relationship_context = self.relationship_manager.get_relationship_context(f"@{target['user']}")
@@ -430,7 +482,7 @@ class SocialAgent:
                 context = {
                     'system_prompt': self.full_system_prompt,
                     'mood': self._get_current_mood(),
-                    'interests': agent_memory.get_top_interests(limit=3),
+                    'interests': agent_memory.get_top_interests(limit=10),
                     'relationship': relationship_context
                 }
                 reply_content = self.content_generator.generate_reply(

@@ -318,6 +318,9 @@ class ContentGenerator:
             if inspiration:
                 topic_hint += f"\n- 영감: {inspiration.get('angle', '')}"
 
+            topic_context = context.get('topic_context', '')
+            context_hint = f"\n- 배경지식: {topic_context}" if topic_context else ""
+
             prompt = f"""
 {context.get('system_prompt', '')}
 
@@ -327,14 +330,14 @@ class ContentGenerator:
 ### 상황:
 - 현재 기분: {context.get('mood', '')}
 - 관심사: {', '.join(context.get('interests', []))}
-{topic_hint}
+{topic_hint}{context_hint}
 
 ### 지시:
 독백 형태의 트윗을 작성하세요.
 - {config.min_length}~{config.max_length}자 사이로 작성
 - 혼자 생각을 정리하듯이, 독백 느낌으로
 - 페르소나의 말투 특성 반영
-- 요리 비유나 음식 관련 통찰 권장
+- 배경지식이 있으면 참고하되, 내 관점으로 표현
 - 반드시 한글만 사용 (한자, 일본어 절대 금지)
 """
             return llm_client.generate(prompt)

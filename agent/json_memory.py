@@ -108,36 +108,94 @@ class AgentMemory:
             context += f"- {k}: {v}\n"
         return context
 
-    def track_keyword(self, keyword):
-        """Layer 2: 관심사 추적 / Curiosity tracking"""
+    def track_keyword(self, keyword: str, source: str = "unknown"):
+        """Layer 2: 관심사 추적 / Curiosity tracking (확장 구조)"""
         if "curiosity" not in self.memory:
             self.memory["curiosity"] = {}
-        
-        keyword = keyword.lower().strip()
-        if keyword:
-            self.memory["curiosity"][keyword] = self.memory["curiosity"].get(keyword, 0) + 1
-            self._save()
 
-    def get_top_interests(self, limit=3):
+        keyword = keyword.lower().strip()
+        if not keyword or len(keyword) < 2:
+            return
+
+        now = datetime.now().isoformat()
+
+        # 기존 데이터 마이그레이션 (숫자 → dict)
+        if keyword in self.memory["curiosity"]:
+            existing = self.memory["curiosity"][keyword]
+            if isinstance(existing, (int, float)):
+                self.memory["curiosity"][keyword] = {
+                    "count": existing,
+                    "first_seen": now,
+                    "last_seen": now,
+                    "sources": [source]
+                }
+            else:
+                existing["count"] = existing.get("count", 0) + 1
+                existing["last_seen"] = now
+                if source not in existing.get("sources", []):
+                    existing["sources"] = existing.get("sources", [])[-4:] + [source]
+        else:
+            self.memory["curiosity"][keyword] = {
+                "count": 1,
+                "first_seen": now,
+                "last_seen": now,
+                "sources": [source]
+            }
+
+        self._save()
+
+    def get_top_interests(self, limit: int = 10) -> list:
+        """상위 관심사 목록 (기본 10개로 확장)"""
         if "curiosity" not in self.memory or not self.memory["curiosity"]:
             return []
-        
+
+        def get_count(item):
+            k, v = item
+            if isinstance(v, (int, float)):
+                return v
+            return v.get("count", 0)
+
         sorted_interests = sorted(
             self.memory["curiosity"].items(),
-            key=lambda x: x[1],
+            key=get_count,
             reverse=True
         )
-        return [k for k, v in sorted_interests[:limit]]
+        return [k for k, _ in sorted_interests[:limit]]
 
-    def decay_curiosity(self, decay_rate=0.5):
+    def get_interest_detail(self, keyword: str) -> dict:
+        """특정 관심사 상세 정보"""
+        keyword = keyword.lower().strip()
+        if "curiosity" not in self.memory:
+            return {}
+
+        data = self.memory["curiosity"].get(keyword)
+        if not data:
+            return {}
+
+        if isinstance(data, (int, float)):
+            return {"count": data}
+
+        return data
+
+    def decay_curiosity(self, decay_rate: float = 0.7):
         """관심사 감쇠 / Decay old interests"""
         if "curiosity" not in self.memory:
             return
-        
+
         for keyword in list(self.memory["curiosity"].keys()):
-            self.memory["curiosity"][keyword] *= decay_rate
-            if self.memory["curiosity"][keyword] < 0.5:
+            data = self.memory["curiosity"][keyword]
+
+            if isinstance(data, (int, float)):
+                new_count = data * decay_rate
+            else:
+                new_count = data.get("count", 0) * decay_rate
+                data["count"] = new_count
+
+            if new_count < 0.5:
                 del self.memory["curiosity"][keyword]
+            elif isinstance(data, (int, float)):
+                self.memory["curiosity"][keyword] = new_count
+
         self._save()
 
     def summarize_old_interactions(self, llm_client=None, threshold=50):

@@ -1,6 +1,6 @@
 """
 Twitter Trends (Layer 3)
-트위터 실시간 트렌드 수집
+트위터 실시간 트렌드 수집 + 지식 학습
 """
 from twikit import Client
 import os
@@ -8,6 +8,16 @@ from dotenv import load_dotenv
 import asyncio
 
 load_dotenv()
+
+_knowledge_base = None
+
+def _get_knowledge_base():
+    """Lazy import to avoid circular dependency"""
+    global _knowledge_base
+    if _knowledge_base is None:
+        from agent.knowledge_base import knowledge_base
+        _knowledge_base = knowledge_base
+    return _knowledge_base
 
 
 def get_trending_topics(count=5):
@@ -41,6 +51,8 @@ def get_trending_topics(count=5):
         )
         if trends:
             print(f"[TRENDS] {len(trends)} topics fetched")
+            # 트렌드 지식 학습 (비동기로 나중에 해도 됨)
+            _learn_trends_async(trends)
         return trends
 
     except asyncio.TimeoutError:
@@ -79,3 +91,19 @@ def get_daily_briefing():
     if not trends:
         return "트렌드 정보 없음"
     return f"오늘의 이슈: {', '.join(trends)}"
+
+
+def _learn_trends_async(trends: list):
+    """트렌드 키워드 지식 학습 (최대 3개만)"""
+    try:
+        kb = _get_knowledge_base()
+        learned = 0
+        for keyword in trends[:3]:  # 너무 많으면 LLM 호출 비용
+            existing = kb.get(keyword)
+            if not existing:
+                kb.learn_topic(keyword)
+                learned += 1
+        if learned:
+            print(f"[TRENDS] Learned {learned} new topics")
+    except Exception as e:
+        print(f"[TRENDS] Learn failed: {e}")
