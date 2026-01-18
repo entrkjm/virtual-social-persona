@@ -57,3 +57,38 @@ def truncate_to_twitter_limit(text: str, max_weighted: int = 280) -> str:
     # 비율 계산하여 자르기
     target_chars = len(text) * max_weighted // weighted
     return text[:target_chars - 3] + "..."
+
+
+class TwitterFormatter:
+    """Twitter 플랫폼 제약 관리자"""
+    
+    def __init__(self, platform_config: dict = None):
+        config = platform_config or {}
+        constraints = config.get('constraints', {})
+        
+        self.max_length = constraints.get('max_length', 280)
+        self.weighted_length = constraints.get('weighted_length', True)
+        self.forbidden_scripts = constraints.get('forbidden_scripts', ['한자', '히라가나', '가타카나'])
+    
+    def get_length(self, text: str) -> int:
+        """플랫폼에 맞는 글자수 계산"""
+        if self.weighted_length:
+            return twitter_weighted_len(text)
+        return len(text)
+    
+    def exceeds_limit(self, text: str) -> bool:
+        """글자수 제한 초과 여부"""
+        return self.get_length(text) > self.max_length
+    
+    def check_forbidden(self, text: str) -> List[str]:
+        """금지 문자 체크 - 발견된 문자 반환"""
+        return get_forbidden_chars(text)
+    
+    def apply_constraints(self, text: str) -> str:
+        """플랫폼 제약 적용 (길이 자르기)"""
+        return truncate_to_twitter_limit(text, self.max_length)
+    
+    def get_constraint_prompt(self) -> str:
+        """LLM 프롬프트용 제약 조건 텍스트"""
+        forbidden_text = ', '.join(self.forbidden_scripts)
+        return f"- 반드시 한글만 사용 ({forbidden_text} 절대 금지)\n- 글자수 {self.max_length}자 이내"
