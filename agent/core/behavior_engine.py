@@ -21,6 +21,7 @@ class BehaviorDecision:
     suggested_action: str  # "LURK", "LIKE", "COMMENT", "LIKE_AND_COMMENT"
     confidence: float
     mood_state: float
+    actions: Dict[str, bool] = field(default_factory=dict)
 
 
 @dataclass
@@ -376,95 +377,88 @@ class BehaviorEngine:
 
         return random.random() < regret_prob
 
-    def calculate_interaction_probability(self, context: Dict) -> float:
+    def calculate_interaction_score(self, context: Dict) -> float:
+        """Calculate additive interaction score (0.0 to 1.0)"""
         self._reset_daily_counters_if_needed()
 
         user_handle = context.get('tweet', {}).get('user', '')
-        post_id = context.get('tweet', {}).get('id', '')
         topics = context.get('perception', {}).get('topics', [])
         sentiment = context.get('perception', {}).get('sentiment', 'neutral')
         relationship = context.get('relationship', '')
 
-        from agent.core.mode_manager import AgentMode
-        if mode_manager.mode == AgentMode.AGGRESSIVE:
-            base_prob = 0.95
-        elif mode_manager.mode == AgentMode.TEST:
-            base_prob = 0.75
-        else:
-            base_prob = 0.5
+        # 1. Load Config
+        model_config = self.config.get('probability_model', {})
+        base_prob = model_config.get('base_probability', 0.5)
+        modifiers = model_config.get('modifiers', {})
 
-        # 1. 같은 유저 체크
+        score = base_prob
+        log_factors = []
+
+        # 2. Hard Limits (Override Score)
+        # Same User Limit
         same_user_config = self.config.get('interaction_patterns', {}).get('same_user', {})
         max_per_day = same_user_config.get('max_interactions_per_day', 3)
         user_count = self._count_user_interactions_today(user_handle)
-
+        
+        is_obsession = self._is_obsession_topic(topics)
+        
         if user_count >= max_per_day:
-            if not (same_user_config.get('obsession_override', True) and
-                    self._is_obsession_topic(topics)):
-                # AGGRESSIVE 모드에서는 한도 초과해도 약간의 확률 부여
-                if mode_manager.mode == AgentMode.AGGRESSIVE:
-                    return 0.3
-                return 0.05  # 거의 스킵
+            if not (same_user_config.get('obsession_override', True) and is_obsession):
+                return 0.05  # Almost zero chance if limit reached
 
-        # 2. 쿨다운 체크
+        # Cooldown
         if self._is_in_cooldown(user_handle):
-            if not (same_user_config.get('obsession_override', True) and
-                    self._is_obsession_topic(topics)):
-                # AGGRESSIVE 모드에서는 쿨다운 페널티 완화
-                multiplier = 0.8 if mode_manager.mode == AgentMode.AGGRESSIVE else 0.3
-                base_prob *= multiplier
+             if not (same_user_config.get('obsession_override', True) and is_obsession):
+                return 0.1 # Significant drop
 
-        # 3. 같은 게시물 댓글 수 체크
-        same_post_config = self.config.get('interaction_patterns', {}).get('same_post', {})
-        max_comments = same_post_config.get('max_comments_per_post', 2)
-        comment_count = self._get_post_comment_count(post_id)
-
-        if comment_count >= max_comments:
-            return 0.0  # 하드 리밋
-
-        # 4. 현타 체크 (AGGRESSIVE에서는 무시)
-        if mode_manager.mode != AgentMode.AGGRESSIVE and self._check_regret(post_id):
-            return 0.0
-
-        # 5. 기분 반영
-        context['recent_sentiment'] = sentiment
-        mood = self._calculate_current_mood(context)
-        # AGGRESSIVE에서는 기분 영향 최소화
-        mood_impact = 0.2 if mode_manager.mode == AgentMode.AGGRESSIVE else 0.5
-        base_prob *= (1.0 - mood_impact) + (mood * mood_impact)
-
-        # 6. 관계 반영
-        relationship_factor = self._get_relationship_factor(relationship)
-        # AGGRESSIVE에서는 낯가림 완화
-        if mode_manager.mode == AgentMode.AGGRESSIVE and relationship_factor < 1.0:
-            relationship_factor = 0.9
-        base_prob *= relationship_factor
-
-
-        # 7. 감정 반영
-        sentiment_factor = self._get_sentiment_factor(sentiment)
-        base_prob *= sentiment_factor
-
-        # 8. 주제 관심도
-        topic_factor = self._get_topic_factor(topics)
-        base_prob *= topic_factor
-
-        # 9. 피로도 반영
-        fatigue_factor = self._get_fatigue_factor()
-        base_prob *= fatigue_factor
-
-        # 10. 내향성 반영
-        introversion = self.config.get('personality_traits', {}).get('introversion', 0.85)
-        # AGGRESSIVE에서는 내향성 영향 대폭 축소
-        introversion_impact = 0.2 if mode_manager.mode == AgentMode.AGGRESSIVE else 0.5
-        base_prob *= (1.0 - introversion * introversion_impact)
-
+        # 3. Apply Modifiers (Additive)
+        
+        # Mode Modifier
+        from agent.core.mode_manager import AgentMode, mode_manager
         if mode_manager.mode == AgentMode.AGGRESSIVE:
-             i_impact = 0.2
-             m_impact = 0.2
-             print(f"[PROB-DEBUG] RelFactor:{relationship_factor:.2f} SentFactor:{sentiment_factor:.2f} TopicFactor:{topic_factor:.2f} Fatigue:{fatigue_factor:.2f}")
-             print(f"[PROB] Base:{base_prob:.2f} (Introversion:{1.0-introversion*i_impact:.2f}, Mood:{1.0-m_impact:.2f})")
-        return min(max(base_prob, 0.0), 1.0)
+            mod = modifiers.get('aggressive_mode', 0.3)
+            score += mod
+            log_factors.append(f"Aggressive({mod:+.2f})")
+
+        # Obsession
+        if is_obsession:
+            mod = modifiers.get('obsession', 0.3)
+            score += mod
+            log_factors.append(f"Obsession({mod:+.2f})")
+
+        # Sentiment
+        if sentiment == 'positive':
+            mod = modifiers.get('praise', 0.15)
+            score += mod
+            log_factors.append(f"Praise({mod:+.2f})")
+        elif sentiment == 'negative':
+            mod = modifiers.get('criticism', -0.20)
+            score += mod
+            log_factors.append(f"Criticism({mod:+.2f})")
+
+        # Relationship
+        if relationship == 'stranger':
+            mod = modifiers.get('stranger', -0.10)
+            score += mod
+            log_factors.append(f"Stranger({mod:+.2f})")
+
+        # Introversion (Applied if not obsession)
+        if not is_obsession:
+            mod = modifiers.get('introversion', -0.10)
+            score += mod
+            log_factors.append(f"Introversion({mod:+.2f})")
+
+        # Clamp Score
+        final_score = min(max(score, 0.0), 1.0)
+        
+        if mode_manager.mode == AgentMode.AGGRESSIVE or final_score > 0.5:
+             print(f"[SCORE] Base:{base_prob:.2f} + {' '.join(log_factors)} = {final_score:.2f}")
+
+        return final_score
+
+    def calculate_interaction_probability(self, context: Dict) -> float:
+        """Alias for backward compatibility"""
+        return self.calculate_interaction_score(context)
 
     def decide_action_type(self) -> str:
         """Deprecated: 하위 호환용. decide_actions() 사용 권장"""
@@ -478,62 +472,28 @@ class BehaviorEngine:
     def decide_actions(
         self,
         perception: Optional[Dict] = None,
-        tweet: Optional[Dict] = None
+        tweet: Optional[Dict] = None,
+        interaction_score: float = 0.5
     ) -> Dict[str, bool]:
-        """각 행동을 독립 확률로 판단 (관련도/인기도 기반 조정)
-
-        - normal 모드: 페르소나 behavior.yaml 값 사용
-        - test/aggressive 모드: mode_manager 오버라이드 값 사용
-        - perception/tweet 전달 시 관련도/인기도 기반 확률 조정
-
-        Args:
-            perception: perceive_tweet 결과 (relevance_to_domain 등)
-            tweet: 트윗 데이터 (engagement 포함)
-
-        Returns:
-            {'like': bool, 'repost': bool, 'comment': bool}
-        """
-        if mode_manager.should_override_probabilities():
-            mode_cfg = mode_manager.config
-            base_like = mode_cfg.like_probability
-            base_repost = mode_cfg.repost_probability
-            base_comment = mode_cfg.comment_probability
-        else:
-            action_config = self.config.get('interaction_patterns', {}).get('independent_actions', {})
-            base_like = action_config.get('like_probability', 0.30)
-            base_repost = action_config.get('repost_probability', 0.10)
-            base_comment = action_config.get('comment_probability', 0.05)
-
-        # 관련도 기반 조정 (0.3 ~ 1.0)
-        relevance = perception.get('relevance_to_domain', 0.5) if perception else 0.5
+        """점수 기반 행동 결정 (Cascading Ratios)"""
         
-        # AGGRESSIVE 모드면 관련도 보정 (최소 0.9 보장)
+        # Load Ratios
+        model_config = self.config.get('probability_model', {})
+        ratios = model_config.get('action_ratios', {'like': 1.0, 'repost': 0.8, 'comment': 0.6})
+        
+        # Calculate Action Probabilities
+        like_prob = interaction_score * ratios.get('like', 1.0)
+        repost_prob = interaction_score * ratios.get('repost', 0.8)
+        comment_prob = interaction_score * ratios.get('comment', 0.6)
+
+        # Clamp
+        like_prob = min(max(like_prob, 0.0), 1.0)
+        repost_prob = min(max(repost_prob, 0.0), 1.0)
+        comment_prob = min(max(comment_prob, 0.0), 1.0)
+
+        from agent.core.mode_manager import AgentMode, mode_manager
         if mode_manager.mode == AgentMode.AGGRESSIVE:
-            relevance_factor = max(0.9, 0.3 + (relevance * 0.7))
-        else:
-            relevance_factor = 0.3 + (relevance * 0.7)
-
-        # 인기도 기반 조정 (engagement)
-        engagement = tweet.get('engagement', {}) if tweet else {}
-        likes = engagement.get('favorite_count', 0)
-        retweets = engagement.get('retweet_count', 0)
-        # 20개 기준 정규화, 최소 0.5
-        popularity_factor = min(1.0, 0.5 + (likes + retweets * 2) / 40)
-
-        # 최종 확률 계산
-        like_prob = base_like * relevance_factor
-        # repost는 관련도 + 인기도 둘 다 반영 (더 엄격)
-        repost_prob = base_repost * relevance_factor * popularity_factor
-        # comment는 관련도만 반영
-        comment_prob = base_comment * relevance_factor
-
-        # repost 최소 관련도 임계값 (0.4 미만이면 repost 안 함)
-        if relevance < 0.4 and mode_manager.mode != AgentMode.AGGRESSIVE:
-            repost_prob = 0
-
-        # 로깅을 위한 확률 정보 출력 (옵션)
-        if mode_manager.mode == AgentMode.AGGRESSIVE:
-             print(f"[DECIDE] Rel:{relevance:.2f} -> Factor:{relevance_factor:.2f} | Base(L/R/C):{base_like:.2f}/{base_repost:.2f}/{base_comment:.2f} -> Final:{like_prob:.2f}/{repost_prob:.2f}/{comment_prob:.2f}")
+             print(f"[DECIDE] Score:{interaction_score:.2f} -> Like:{like_prob:.2f} Repost:{repost_prob:.2f} Comment:{comment_prob:.2f}")
 
         return {
             'like': random.random() < like_prob,
@@ -544,43 +504,38 @@ class BehaviorEngine:
     def should_interact(self, context: Dict) -> BehaviorDecision:
         self._reset_daily_counters_if_needed()
 
-        user_handle = context.get('tweet', {}).get('user', '')
-        post_id = context.get('tweet', {}).get('id', '')
         topics = context.get('perception', {}).get('topics', [])
+        
+        # Score Calculation
+        score = self.calculate_interaction_score(context)
 
-        # 확률 계산
-        probability = self.calculate_interaction_probability(context)
-
-        # 결정
-        if random.random() > probability:
-            # 스킵 이유 결정
-            reason = self._get_skip_reason(context, probability)
+        # Binary Decision based on Score vs Random
+        if random.random() > score:
+            reason = self._get_skip_reason(context, score)
             return BehaviorDecision(
                 decision="SKIP",
                 reason=reason,
                 suggested_action="LURK",
-                confidence=1.0 - probability,
+                confidence=1.0 - score,
                 mood_state=self.current_mood
             )
 
-        # 상호작용 의사 결정 (suggested_action은 레거시)
+        # Action Decision
+        actions = self.decide_actions(interaction_score=score)
+        
+        # Backward compatibility for suggested_action string
         suggested_action = "INTERESTED"
-
-        # 집착 주제면 더 적극적으로
-        if self._is_obsession_topic(topics) and suggested_action == "LURK":
-            suggested_action = "LIKE"
-        if self._is_obsession_topic(topics) and suggested_action == "LIKE":
-            if random.random() < 0.5:
-                suggested_action = "COMMENT"
-
-        reason = self._get_interact_reason(context, probability, suggested_action)
+        if actions['comment']: suggested_action = "COMMENT"
+        elif actions['repost']: suggested_action = "REPOST"
+        elif actions['like']: suggested_action = "LIKE"
 
         return BehaviorDecision(
             decision="INTERESTED",
-            reason=reason,
+            reason=f"Score {score:.2f} passed threshold",
             suggested_action=suggested_action,
-            confidence=probability,
-            mood_state=self.current_mood
+            confidence=score,
+            mood_state=self.current_mood,
+            actions=actions
         )
 
     def _get_skip_reason(self, context: Dict, probability: float) -> str:
