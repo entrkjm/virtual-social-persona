@@ -262,6 +262,14 @@ class SocialAgent:
                 recent_posts=recent_posts
             )
             twitter_id = post_tweet(generated_content)
+
+            # DB에 포스팅 기록 저장 (유사도 체크용)
+            memory_db.add_posting(
+                inspiration_id=None,
+                content=generated_content,
+                trigger_type=source
+            )
+
             return FunctionResultStatus.DONE, f"Posted: {generated_content}", {"tweet_id": twitter_id, "topic": topic, "source": source}
         except Exception as e:
             return FunctionResultStatus.FAILED, f"Failed to tweet: {e}", {}
@@ -331,6 +339,12 @@ class SocialAgent:
                             human_like_controller.record_action('comment')
                             actions_taken.append(f"REPLIED: {reply_content}")
                             human_like_controller.apply_action_delay('comment')
+                            # DB에 답글 기록
+                            memory_db.add_posting(
+                                inspiration_id=None,
+                                content=reply_content,
+                                trigger_type="mention_reply"
+                            )
                     except Exception as e:
                         if '226' in str(e):
                             human_like_controller.handle_error(226)
@@ -544,6 +558,12 @@ class SocialAgent:
                             human_like_controller.record_action('comment')
                             actions_taken.append(f"REPLIED: {reply_content}")
                             human_like_controller.apply_action_delay('comment')
+                            # DB에 답글 기록
+                            memory_db.add_posting(
+                                inspiration_id=None,
+                                content=reply_content,
+                                trigger_type="timeline_reply"
+                            )
 
                             self.relationship_manager.update_relationship(
                                 f"@{target['user']}",

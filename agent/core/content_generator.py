@@ -641,17 +641,22 @@ class ContentGenerator:
         config: ContentConfig,
         topic_context: Optional[str] = None
     ) -> str:
-        """LLM 리뷰 레이어: Pattern Tracker 연동 + 페르소나 보존 교정"""
+        """LLM 리뷰 레이어: 품질 검수 + 패턴 교정"""
         violations = self.pattern_tracker.check_violations(text, topic_context)
         violation_prompt = self.pattern_tracker.format_violations_for_llm(violations)
         persona_prompt = self.pattern_tracker.get_persona_preservation_prompt()
 
+        # 로깅: 리뷰 시작
+        print(f"[REVIEW] 원문: {text[:50]}{'...' if len(text) > 50 else ''}")
+        if violations:
+            print(f"[REVIEW] 위반사항: {[v.pattern for v in violations]}")
+
         if not self.review_enabled and not violations:
+            print(f"[REVIEW] 스킵 (비활성 + 위반 없음)")
             self.pattern_tracker.record_usage(text)
             return text
 
-        prompt = f"""당신은 SNS 글쓰기 교정 전문가입니다.
-이 페르소나의 개성을 유지하면서 과도한 반복만 줄여야 합니다.
+        prompt = f"""당신은 SNS 콘텐츠 품질 검수 전문가입니다.
 
 {persona_prompt}
 
@@ -660,24 +665,34 @@ class ContentGenerator:
 
 {violation_prompt}
 
-### 교정 원칙:
-1. **페르소나 보존 우선**: 위 "패턴 보존 규칙"을 반드시 따르세요
-2. **위반 사항만 교정**: 패턴 위반이 있다면 그것만 고치세요
-3. **최소 개입**: 위반이 없으면 원문 그대로 출력하세요
-4. **개성 유지**: 어눌함, 망설임 등 페르소나 특성은 제거하지 마세요
+### 검수 기준:
+1. **자연스러움**: AI가 쓴 것 같은 딱딱하거나 과도하게 정제된 표현 제거
+2. **진정성**: 진짜 사람이 쓴 것 같은 자연스러운 문장으로
+3. **페르소나 유지**: 위 패턴 보존 규칙 준수, 어눌함/망설임 유지
+4. **패턴 위반 교정**: 위반사항 있으면 자연스럽게 수정
 
-### 규칙:
-- 반드시 한글만 사용 (한자, 일본어 금지)
+### 금지:
+- AI 특유의 "~입니다", "~합니다" 과다 사용
+- 과도하게 친절하거나 설명적인 톤
+- 한자, 일본어 사용
+
+### 출력:
 - 교정된 텍스트만 출력 (설명 없이)
-- 글자 수: {config.min_length}~{config.max_length}자
+- {config.min_length}~{config.max_length}자
 
 ### 교정 결과:"""
 
         reviewed = llm_client.generate(prompt)
         reviewed = reviewed.strip().strip('"\'')
 
+        # 로깅: 리뷰 결과
+        if reviewed != text:
+            print(f"[REVIEW] 수정됨: {reviewed[:50]}{'...' if len(reviewed) > 50 else ''}")
+        else:
+            print(f"[REVIEW] 변경 없음")
+
         if contains_forbidden_chars(reviewed):
-            print(f"[REVIEW] 리뷰 결과에 금지 문자 포함, 원문 사용")
+            print(f"[REVIEW] 금지 문자 포함, 원문 사용")
             self.pattern_tracker.record_usage(text)
             return text
 

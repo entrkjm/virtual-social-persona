@@ -360,3 +360,32 @@ def check_is_following(user_id: str) -> bool:
     except Exception as e:
         print(f"[CHECK_FOLLOW] failed: {e}")
         return False
+
+
+async def _get_my_tweets_twikit(screen_name: str, count: int = 50) -> List[dict]:
+    """내 트윗 가져오기"""
+    async def _do():
+        client = await _get_twikit_client()
+        user = await client.get_user_by_screen_name(screen_name)
+        tweets = await user.get_tweets('Tweets', count=count)
+
+        result = []
+        for tweet in tweets:
+            result.append({
+                "id": tweet.id,
+                "text": tweet.text,
+                "created_at": str(tweet.created_at) if tweet.created_at else None,
+                "is_reply": tweet.in_reply_to_tweet_id is not None,
+                "reply_to": tweet.in_reply_to_tweet_id
+            })
+        return result
+    return await _with_retry(_do)
+
+
+def get_my_tweets(screen_name: str, count: int = 50) -> List[dict]:
+    """내 트윗 목록 조회 (백필용)"""
+    try:
+        return asyncio.run(_get_my_tweets_twikit(screen_name, count))
+    except Exception as e:
+        print(f"[MY_TWEETS] failed: {e}")
+        return []
