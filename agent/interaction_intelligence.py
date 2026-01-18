@@ -1,17 +1,26 @@
 """
 Interaction Intelligence
 LLM 기반 트윗 분석/판단 (Perceive + Judge)
+Response type 결정 (QUIP/SHORT/NORMAL/LONG)
 """
 from core.llm import llm_client
 import json
 from typing import Dict, List
+from enum import Enum
+
+
+class ResponseType(str, Enum):
+    QUIP = "quip"      # 1-15자, LLM 없이 패턴 풀에서
+    SHORT = "short"    # 15-50자, 간단 프롬프트
+    NORMAL = "normal"  # 50-100자, 표준 답글
+    LONG = "long"      # 100+자, TMI 모드 (요리 주제)
 
 
 class InteractionIntelligence:
 
     @staticmethod
     def perceive_tweet(tweet_text: str, user_handle: str) -> Dict:
-        """Perceive: 트윗 의미/감정/의도 분석"""
+        """Perceive: 트윗 의미/감정/의도 분석 + 응답 유형 결정"""
         perception_prompt = f"""
 다음 트윗을 분석하세요:
 
@@ -22,18 +31,31 @@ JSON 형식으로 출력 (다른 설명 없이 JSON만):
 {{
     "topics": ["핵심 주제 키워드 1~3개"],
     "sentiment": "positive 또는 neutral 또는 negative",
-    "intent": "질문 또는 공유 또는 불만 또는 칭찬 또는 기타",
+    "intent": "질문 또는 공유 또는 불만 또는 칭찬 또는 농담 또는 밈 또는 기타",
     "relevance_to_cooking": 0.0에서 1.0 사이 숫자,
+    "complexity": "simple 또는 moderate 또는 complex",
+    "quip_category": "agreement 또는 impressed 또는 casual 또는 food_related 또는 skeptical 또는 simple_answer 또는 none",
     "user_profile_hint": "이 사람의 특징이나 관심사 추론 (한 문장)",
     "my_angle": "요리사 관점에서 이 트윗에 대해 할 수 있는 말이나 생각 (한 문장, 없으면 빈 문자열)"
 }}
+
+complexity 판단 기준:
+- simple: 밈, 단순 감탄, 짧은 의견, 농담 (짧은 반응이 자연스러움)
+- moderate: 일반적인 대화, 간단한 질문/공유
+- complex: 깊은 질문, 전문 주제, 요리 관련 논의 (긴 답변이 적절함)
+
+quip_category: 짧은 반응(1-15자)으로 충분한 경우 해당 카테고리 선택, 아니면 none
 """
-        
+
         try:
             response = llm_client.generate(perception_prompt, system_prompt="You are a tweet analyzer.")
-            # JSON 파싱
             clean_response = response.replace("```json", "").replace("```", "").strip()
-            return json.loads(clean_response)
+            perception = json.loads(clean_response)
+
+            # response_type 결정
+            perception["response_type"] = InteractionIntelligence._determine_response_type(perception)
+
+            return perception
         except Exception as e:
             print(f"[PERCEIVE] {e}")
             return {
@@ -41,9 +63,39 @@ JSON 형식으로 출력 (다른 설명 없이 JSON만):
                 "sentiment": "neutral",
                 "intent": "기타",
                 "relevance_to_cooking": 0.0,
+                "complexity": "moderate",
+                "quip_category": "none",
                 "user_profile_hint": "분석 실패",
-                "my_angle": ""
+                "my_angle": "",
+                "response_type": ResponseType.NORMAL
             }
+
+    @staticmethod
+    def _determine_response_type(perception: Dict) -> ResponseType:
+        """perception 기반 응답 유형 결정"""
+        complexity = perception.get("complexity", "moderate")
+        quip_cat = perception.get("quip_category", "none")
+        cooking_rel = perception.get("relevance_to_cooking", 0.0)
+        intent = perception.get("intent", "기타")
+
+        # QUIP: 짧은 반응으로 충분한 경우
+        if quip_cat != "none" and complexity == "simple":
+            return ResponseType.QUIP
+
+        # LONG: 요리 관련도 높고 복잡한 주제
+        if cooking_rel >= 0.7 and complexity == "complex":
+            return ResponseType.LONG
+
+        # LONG: 구체적인 요리 질문
+        if intent == "질문" and cooking_rel >= 0.5:
+            return ResponseType.LONG
+
+        # SHORT: 단순하지만 QUIP은 아닌 경우
+        if complexity == "simple":
+            return ResponseType.SHORT
+
+        # NORMAL: 기본
+        return ResponseType.NORMAL
 
     @staticmethod
     def judge_with_context(

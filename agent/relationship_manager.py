@@ -16,7 +16,7 @@ class RelationshipManager:
 
     def _load_relationships(self) -> Dict:
         try:
-            path = f"config/personas/{self.persona_name}_relationships.yaml"
+            path = f"config/personas/{self.persona_name}/relationships.yaml"
             with open(path, 'r', encoding='utf-8') as f:
                 return yaml.safe_load(f)
         except FileNotFoundError:

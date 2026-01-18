@@ -41,16 +41,18 @@ class SocialAgent:
     def _get_current_mood(self):
         """시간대별 기분 / Time-based mood"""
         hour = datetime.now().hour
+        mood_desc = self.persona.behavior.get('mood_descriptions', {})
+
         if 6 <= hour < 11:
-            return "아침 일찍 일어나 재료를 검수하며 약간 피곤하지만 섬세한 상태 (조식/커피/명상)"
+            return mood_desc.get('morning', '아침')
         elif 11 <= hour < 14:
-            return "점심 영업 준비로 극도로 예민하고 디테일에 집착하는 상태 (점심/회전율/식감)"
+            return mood_desc.get('lunch', '점심')
         elif 14 <= hour < 17:
-            return "영업 후 휴식하며 멍하니 창밖을 보며 사색에 잠긴 소심한 상태 (휴식/차/비유)"
+            return mood_desc.get('afternoon', '오후')
         elif 17 <= hour < 21:
-            return "저녁 메인 요리를 조리하며 몰입도가 최정상인 소심한 천재 상태 (저녁/조림/메인)"
+            return mood_desc.get('dinner', '저녁')
         else:
-            return "늦은 밤, 혼자 술 한 잔 하며 감성에 젖어 더 소심해진 상태 (야식/고독/나야들기름)"
+            return mood_desc.get('late_night', '밤')
 
     def _calculate_emotional_impact(self, perception: Dict) -> float:
         base_impact = 0.5
@@ -271,15 +273,22 @@ class SocialAgent:
             # SCOUT
             hour = datetime.now().hour
             core_keywords = self.persona.core_keywords
+            time_kw_config = self.persona.behavior.get('time_keywords', {})
+
             if 6 <= hour < 11:
-                time_keywords = ["아침", "조식", "모닝커피"]
+                time_keywords = time_kw_config.get('morning', [])
             elif 11 <= hour < 14:
-                time_keywords = ["점심", "메뉴추천", "맛집"]
+                time_keywords = time_kw_config.get('lunch', [])
+            elif 14 <= hour < 17:
+                time_keywords = time_kw_config.get('afternoon', [])
             elif 17 <= hour < 21:
-                time_keywords = ["저녁", "회식", "요리법"]
+                time_keywords = time_kw_config.get('dinner', [])
             elif 21 <= hour < 24:
-                time_keywords = ["야식", "치킨", "맥주"]
+                time_keywords = time_kw_config.get('late_night', [])
             else:
+                time_keywords = time_kw_config.get('default', [])
+
+            if not time_keywords:
                 time_keywords = core_keywords
 
             curiosity_keywords = agent_memory.get_top_interests(limit=2)

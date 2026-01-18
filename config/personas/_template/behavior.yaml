@@ -1,26 +1,163 @@
 # Behavior Config Template
+# 새 페르소나 생성 시 복사 후 수정
+
+# 시간대별 검색 키워드 (빈 배열 = core_keywords 사용)
+time_keywords:
+  morning: []       # 06-11시
+  lunch: []         # 11-14시
+  afternoon: []     # 14-17시
+  dinner: []        # 17-21시
+  late_night: []    # 21-24시
+  default: []       # 그 외
+
+# 시간대별 기분 설명 (상태 컨텍스트로 사용됨)
+mood_descriptions:
+  morning: "아침 상태"
+  lunch: "점심 상태"
+  afternoon: "오후 상태"
+  dinner: "저녁 상태"
+  late_night: "밤 상태"
 
 personality_traits:
   introversion: 0.5       # 0=외향 ~ 1=내향
+  impulsiveness: 0.3      # 충동성
+  consistency: 0.5        # 일관성
   obsessiveness: 0.5      # 집착도
-  enthusiasm: 0.5         # 열정
+  curiosity: 0.5          # 호기심
 
 interaction_patterns:
   same_user:
     max_interactions_per_day: 5
     cooldown_minutes: 60
+    obsession_override: true
+    obsession_topics: []    # 집착 주제 (이 주제면 쿨다운 무시)
+
   same_post:
     max_comments_per_post: 2
     regret_probability: 0.20
 
   independent_actions:
-    like_probability: 0.60
-    repost_probability: 0.15
-    comment_probability: 0.12
+    like_probability: 0.50
+    repost_probability: 0.10
+    comment_probability: 0.10
 
-mood_modifiers:
-  time_of_day:
-    morning: 0.0
-    afternoon: 0.1
-    evening: 0.2
-    night: -0.1
+  mood_volatility:
+    enabled: true
+    base_mood: 0.5
+    factors:
+      time_of_day:
+        impact: 0.3
+        schedule:
+          morning: 0.5
+          lunch: 0.5
+          afternoon: 0.5
+          dinner: 0.5
+          late_night: 0.5
+      recent_interactions:
+        impact: 0.3
+        positive_boost: 0.2
+        negative_drop: 0.2
+      random:
+        impact: 0.2
+        variance: 0.1
+
+behavioral_rules:
+  when_praised:
+    action_modifier: "기뻐함"
+    probability_multiplier: 1.2
+  when_criticized:
+    action_modifier: "움츠러듦"
+    probability_multiplier: 0.5
+  when_topic_matches_obsession:
+    action_modifier: "관심 보임"
+    probability_multiplier: 1.5
+  when_tired:
+    threshold_interactions: 10
+    action_modifier: "지침"
+    probability_multiplier: 0.6
+  when_stranger:
+    action_modifier: "조심함"
+    probability_multiplier: 0.8
+  when_familiar:
+    threshold_interactions: 5
+    action_modifier: "편안함"
+    probability_multiplier: 1.2
+
+content_review:
+  enabled: true
+  fix_excessive_patterns: true
+  patterns_to_moderate: []    # 교정 대상 패턴
+  max_pattern_occurrences: 1
+
+follow_behavior:
+  enabled: true
+  daily_limit: 20
+  base_probability: 0.15
+  score_threshold: 40
+  delay:
+    min: 30
+    max: 300
+  exclude:
+    no_profile_image: true
+    no_bio: true
+    follower_ratio_below: 0.1
+    account_age_days_below: 30
+    following_above: 5000
+  priority:
+    follows_me: true
+    bio_keywords: []          # 관심 키워드 (바이오 매칭)
+  rate_limit:
+    max_consecutive: 3
+    cooldown_minutes: 30
+  emergency_stop:
+    error_threshold: 3
+    pause_hours: 1
+
+human_like:
+  warmup:
+    enabled: true
+    steps: 5
+  action_delays:
+    after_like: [2, 5]
+    after_comment: [5, 15]
+    after_post: [30, 120]
+    between_steps: [3, 10]
+  burst_prevention:
+    max_consecutive_actions: 3
+    cooldown_after_burst: 60
+  error_handling:
+    on_226:
+      pause_minutes: 30
+      reduce_probability: 0.5
+    on_404:
+      pause_minutes: 5
+
+activity_schedule:
+  sleep_pattern:
+    base_sleep_start: 1
+    base_wake_time: 7
+    variance:
+      sleep_start: 2
+      wake_time: 1.5
+    exceptions:
+      late_night_probability: 0.15
+      early_wake_probability: 0.10
+      midnight_check_probability: 0.08
+    weekend_modifier:
+      sleep_start: 1
+      wake_time: 2
+  hourly_activity:
+    "07-09": 0.3
+    "09-12": 0.7
+    "12-14": 0.5
+    "14-18": 0.8
+    "18-22": 1.0
+    "22-01": 0.6
+  random_breaks:
+    enabled: true
+    probability: 0.15
+    duration_min: 30
+    duration_max: 180
+  random_off_day:
+    enabled: true
+    probability: 0.10
