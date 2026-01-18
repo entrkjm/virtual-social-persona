@@ -20,24 +20,61 @@ from datetime import datetime
 import random
 
 # Dynamic Memory (v2)
-from agent.memory.database import memory_db, Episode, generate_id
-from agent.memory.inspiration_pool import inspiration_pool
-from agent.memory.tier_manager import tier_manager
-from agent.memory.consolidator import memory_consolidator
-from agent.posting.trigger_engine import posting_trigger
-from agent.core.topic_selector import topic_selector
-from agent.knowledge.knowledge_base import knowledge_base
+from agent.memory.factory import MemoryFactory  # Changed import
+from agent.memory.database import Episode, generate_id
+from agent.memory.inspiration_pool import InspirationPool
+from agent.memory.tier_manager import TierManager
+from agent.memory.consolidator import MemoryConsolidator
+from agent.posting.trigger_engine import PostingTriggerEngine
+from agent.core.topic_selector import TopicSelector
+from agent.knowledge.knowledge_base import KnowledgeBase
+from agent.series.engine import SeriesEngine
+from agent.persona.pattern_tracker import PatternTracker
 
 class SocialAgent:
     def __init__(self):
         self.persona = active_persona
         self.name = self.persona.name
+        
+        # Initialize Memory for this Persona
+        # Note: persona.id is the directory name (e.g., 'chef_choi')
+        self.memory_db = MemoryFactory.get_memory_db(self.persona.id)
+        self.vector_store = MemoryFactory.get_vector_store(self.persona.id)
+        
+        # Dependency Injection needed for sub-components (will need to refactor them too)
+        # For now, assigning to instance variables
+        
         self.relationship_manager = initialize_relationship_manager(
             persona_name=self.persona.name,
             memory_instance=agent_memory
         )
         self.content_generator = create_content_generator(self.persona)
         self.full_system_prompt = self.persona.system_prompt
+        
+        # Initialize Sub-components with DI
+        self.tier_manager = TierManager() # tier_manager might be stateless or need Config? Assuming stateless for now or default
+        self.inspiration_pool = InspirationPool(
+            db=self.memory_db,
+            vector_store=self.vector_store,
+            tier_manager=self.tier_manager
+        )
+        self.memory_consolidator = MemoryConsolidator(
+            db=self.memory_db,
+            vector_store=self.vector_store,
+            tier_manager=self.tier_manager
+        )
+        self.posting_trigger = PostingTriggerEngine(
+            db=self.memory_db,
+            inspiration_pool=self.inspiration_pool
+        )
+        self.pattern_tracker = PatternTracker(
+            db=self.memory_db,
+            pattern_registry=self.persona.raw_data.get('pattern_registry')
+        )
+        self.topic_selector = TopicSelector()
+        
+        # Series Engine 초기화
+        self.series_engine = SeriesEngine(self.persona)
 
     def _get_current_mood(self):
         """시간대별 기분 / Time-based mood"""
@@ -122,8 +159,9 @@ class SocialAgent:
             sentiment=perception.get('sentiment', 'neutral'),
             emotional_impact=emotional_impact
         )
-        memory_db.add_episode(episode)
+        self.memory_db.add_episode(episode)
         return episode
+
 
     def _create_inspiration_from_episode(
         self,
@@ -131,7 +169,7 @@ class SocialAgent:
         my_angle: str,
         urgency: str = 'brewing'
     ) -> Optional[str]:
-        insp = inspiration_pool.create_inspiration_from_episode(
+        insp = self.inspiration_pool.create_inspiration_from_episode(
             episode=episode,
             my_angle=my_angle,
             urgency=urgency
@@ -140,8 +178,8 @@ class SocialAgent:
 
     def get_state_fn(self, function_result: FunctionResult, current_state: dict) -> dict:
         """현재 상태 + 3-Layer 시스템 프롬프트 생성"""
-        if memory_consolidator.should_run(interval_hours=settings.CONSOLIDATION_INTERVAL):
-            stats = memory_consolidator.run()
+        if self.memory_consolidator.should_run(interval_hours=settings.CONSOLIDATION_INTERVAL):
+            stats = self.memory_consolidator.run()
             print(f"[MEMORY] +{stats.promoted} promoted, -{stats.deleted} deleted")
 
         memory_context = agent_memory.get_recent_context()
@@ -157,9 +195,11 @@ class SocialAgent:
         except:
             daily_briefing = "없음"
 
-        core_memories = memory_db.get_all_core_memories()
-        core_context = tier_manager.get_core_context_for_llm(core_memories)
-        recent_posts_context = memory_db.get_recent_posts_context(limit=5)
+            daily_briefing = "없음"
+
+        core_memories = self.memory_db.get_all_core_memories()
+        core_context = self.tier_manager.get_core_context_for_llm(core_memories)
+        recent_posts_context = self.memory_db.get_recent_posts_context(limit=5)
 
         self.full_system_prompt = f"""
 {self.persona.system_prompt}
@@ -196,6 +236,16 @@ class SocialAgent:
 
     def post_tweet_executable(self, content: str) -> Tuple[FunctionResultStatus, str, Dict[str, Any]]:
         try:
+            # 1. 시그니처 시리즈 체크 (content가 없을 때만)
+            if not content:
+                # 트위터 플랫폼 확인
+                if 'twitter' in self.series_engine.get_enabled_platforms():
+                    # 시리즈 실행 시도 (랜덤 선택 + 쿨다운 체크)
+                    result = self.series_engine.execute('twitter')
+                    if result:
+                        return FunctionResultStatus.DONE, f"Posted Series: {result}", result
+
+            # 2. 일반 포스트 (Casual Post)
             # 토픽 선택 (content가 비어있으면 자동 선택)
             if not content:
                 hour = datetime.now().hour
@@ -219,7 +269,7 @@ class SocialAgent:
                 inspiration_topics = []
                 try:
                     for tier in ['short_term', 'long_term']:
-                        for insp in inspiration_pool.get_by_tier(tier)[:3]:
+                        for insp in self.inspiration_pool.get_by_tier(tier)[:3]:
                             if insp.topic and insp.topic not in inspiration_topics:
                                 inspiration_topics.append(insp.topic)
                 except:
@@ -228,7 +278,9 @@ class SocialAgent:
                 # 지식 베이스에서 관련 토픽
                 knowledge_topics = knowledge_base.get_relevant_topics(min_relevance=0.2, limit=5)
 
-                topic, source = topic_selector.select(
+                trend_keywords = knowledge_topics
+
+                topic, source = self.topic_selector.select(
                     core_keywords=self.persona.core_keywords,
                     time_keywords=time_keywords,
                     curiosity_keywords=agent_memory.get_top_interests(limit=10),
@@ -244,10 +296,10 @@ class SocialAgent:
             topic_context = ""
             knowledge = knowledge_base.get(topic)
             if knowledge and knowledge.get('my_angle'):
-                topic_context = f"{knowledge.get('summary', '')} / 내 관점: {knowledge['my_angle']}"
-
+                topic_context = f"{knowledge.get('summary', '')} / 내 관점: {knowledge['my_angle']}\n"
+            
             # 최근 포스트 가져오기 (유사도 체크용)
-            recent_posts_data = memory_db.get_recent_posts(limit=10)
+            recent_posts_data = self.memory_db.get_recent_posts(limit=10)
             recent_posts = [p['content'] for p in recent_posts_data]
 
             context = {
@@ -264,7 +316,7 @@ class SocialAgent:
             twitter_id = post_tweet(generated_content)
 
             # DB에 포스팅 기록 저장 (유사도 체크용)
-            memory_db.add_posting(
+            self.memory_db.add_posting(
                 inspiration_id=None,
                 content=generated_content,
                 trigger_type=source
@@ -340,7 +392,7 @@ class SocialAgent:
                             actions_taken.append(f"REPLIED: {reply_content}")
                             human_like_controller.apply_action_delay('comment')
                             # DB에 답글 기록
-                            memory_db.add_posting(
+                            self.memory_db.add_posting(
                                 inspiration_id=None,
                                 content=reply_content,
                                 trigger_type="mention_reply"
@@ -407,13 +459,13 @@ class SocialAgent:
             inspiration_topics = []
             try:
                 for tier in ['short_term', 'long_term']:
-                    for insp in inspiration_pool.get_by_tier(tier)[:3]:
+                    for insp in self.inspiration_pool.get_by_tier(tier)[:3]:
                         if insp.topic and insp.topic not in inspiration_topics:
                             inspiration_topics.append(insp.topic)
             except:
                 pass
 
-            search_query, source = topic_selector.select(
+            search_query, source = self.topic_selector.select(
                 core_keywords=core_keywords,
                 time_keywords=time_keywords,
                 curiosity_keywords=curiosity_keywords,
@@ -457,7 +509,7 @@ class SocialAgent:
                 self._create_inspiration_from_episode(episode, my_angle)
                 print(f"[INSPIRATION] 새 영감 생성: {my_angle[:30]}...")
 
-            reinforcement_trigger = inspiration_pool.on_content_seen(
+            reinforcement_trigger = self.inspiration_pool.on_content_seen(
                 content=target['text'],
                 emotional_impact=emotional_impact
             )
@@ -468,7 +520,7 @@ class SocialAgent:
                 'current_episode': episode,
                 'reinforcement_trigger': reinforcement_trigger
             }
-            posting_decision = posting_trigger.check_trigger(trigger_context)
+            posting_decision = self.posting_trigger.check_trigger(trigger_context)
             if posting_decision:
                 print(f"[TRIGGER] {posting_decision.type}")
 
@@ -559,7 +611,7 @@ class SocialAgent:
                             actions_taken.append(f"REPLIED: {reply_content}")
                             human_like_controller.apply_action_delay('comment')
                             # DB에 답글 기록
-                            memory_db.add_posting(
+                            self.memory_db.add_posting(
                                 inspiration_id=None,
                                 content=reply_content,
                                 trigger_type="timeline_reply"
