@@ -5,8 +5,8 @@ Scout → Perceive → Behavior → Judge → Action
 from game_sdk.game.custom_types import Function, Argument, FunctionResultStatus, FunctionResult
 from config.settings import settings
 from actions.market_data import get_market_data
-from platforms.twitter.social import post_tweet, search_tweets, favorite_tweet, repost_tweet, get_mentions, follow_user, get_user_profile
-from platforms.twitter.trends import get_trending_topics, get_daily_briefing
+from agent.platforms.interface import SocialPlatformAdapter, SocialPost
+# Trends removed for decoupling, to be added to adapter later
 from core.llm import llm_client
 from agent.persona.persona_loader import active_persona
 from agent.memory import agent_memory
@@ -33,7 +33,8 @@ from agent.platforms.twitter.modes.series.engine import SeriesEngine
 from agent.persona.pattern_tracker import PatternTracker
 
 class SocialAgent:
-    def __init__(self):
+    def __init__(self, adapter: SocialPlatformAdapter):
+        self.adapter = adapter
         self.persona = active_persona
         self.name = self.persona.name
         
@@ -78,7 +79,25 @@ class SocialAgent:
         self.topic_selector = TopicSelector()
         
         # Series Engine 초기화
+        # Series Engine 초기화
         self.series_engine = SeriesEngine(self.persona)
+
+    def _post_to_dict(self, post: SocialPost) -> Dict:
+        """Convert SocialPost object to dictionary for legacy logic compatibility"""
+        return {
+            "id": post.id,
+            "user": post.user.username,
+            "user_id": post.user.id,
+            "text": post.text,
+            "created_at": post.created_at,
+            "engagement": {
+                "favorite_count": post.metrics.get('likes', 0),
+                "retweet_count": post.metrics.get('reposts', 0),
+                "reply_count": post.metrics.get('replies', 0),
+                "quote_count": 0
+            },
+            "raw_data": post.raw_data
+        }
 
     def _get_current_mood(self):
         """시간대별 기분 / Time-based mood"""
@@ -194,12 +213,8 @@ class SocialAgent:
         top_interests = agent_memory.get_top_interests(limit=10)
         interests_text = ", ".join(top_interests) if top_interests else "없음"
 
-        try:
-            daily_briefing = get_daily_briefing()
-        except:
-            daily_briefing = "없음"
-
-            daily_briefing = "없음"
+        # Trends removed
+        daily_briefing = "트렌드 정보 없음 (Decoupled)"
 
         core_memories = self.memory_db.get_all_core_memories()
         core_context = self.tier_manager.get_core_context_for_llm(core_memories)
@@ -317,7 +332,8 @@ class SocialAgent:
                 context=context,
                 recent_posts=recent_posts
             )
-            twitter_id = post_tweet(generated_content)
+
+            tweet_id = self.adapter.post(generated_content)
 
             # DB에 포스팅 기록 저장 (유사도 체크용)
             self.memory_db.add_posting(
@@ -326,7 +342,7 @@ class SocialAgent:
                 trigger_type=source
             )
 
-            return FunctionResultStatus.DONE, f"Posted: {generated_content}", {"tweet_id": twitter_id, "topic": topic, "source": source}
+            return FunctionResultStatus.DONE, f"Posted: {generated_content}", {"tweet_id": tweet_id, "topic": topic, "source": source}
         except Exception as e:
             return FunctionResultStatus.FAILED, f"Failed to tweet: {e}", {}
 
@@ -337,8 +353,10 @@ class SocialAgent:
             if not can_act:
                 print(f"[HUMAN-LIKE] 멘션 액션 제한: {reason}")
                 return FunctionResultStatus.DONE, f"SKIP (human-like): {reason}", {'human_like_skip': True}
-
-            mentions = get_mentions(count=10)
+            
+            mentions_data = self.adapter.get_mentions(count=10)
+            mentions = [self._post_to_dict(m) for m in mentions_data]
+            
             if not mentions:
                 return FunctionResultStatus.DONE, "No new mentions", {}
 
@@ -361,7 +379,7 @@ class SocialAgent:
 
             if actions['like']:
                 try:
-                    if favorite_tweet(mention['id']):
+                    if self.adapter.like(mention['id']):
                         human_like_controller.record_action('like')
                         actions_taken.append("LIKED")
                         human_like_controller.apply_action_delay('like')
@@ -390,7 +408,7 @@ class SocialAgent:
 
                 if reply_content:
                     try:
-                        tweet_id = post_tweet(reply_content, reply_to=mention['id'])
+                        tweet_id = self.adapter.reply(mention['id'], reply_content)
                         if tweet_id and "Failed" not in str(tweet_id):
                             human_like_controller.record_action('comment')
                             actions_taken.append(f"REPLIED: {reply_content}")
@@ -452,12 +470,8 @@ class SocialAgent:
 
             curiosity_keywords = agent_memory.get_top_interests(limit=10)
 
-            try:
-                trend_keywords = get_trending_topics(count=5)
-                for kw in trend_keywords:
-                    agent_memory.track_keyword(kw, source="trend")
-            except:
-                trend_keywords = []
+            # Trends removed
+            trend_keywords = []
 
             # inspiration_pool에서 활성 영감 토픽
             inspiration_topics = []
@@ -478,7 +492,11 @@ class SocialAgent:
             )
 
             print(f"[SCOUT] query={search_query} (source={source})")
-            results = search_tweets(search_query, count=8)
+            
+            # Use Adapter
+            posts = self.adapter.search(search_query, count=8)
+            results = [self._post_to_dict(p) for p in posts]
+            
             if not results:
                 return FunctionResultStatus.DONE, "No tweets found", {}
 
@@ -494,8 +512,17 @@ class SocialAgent:
                     tweet_text=tweet['text'],
                     user_handle=f"@{tweet['user']}"
                 )
+                
+                # 쓰레기 필터링 (언어/스팸)
+                if tweet_perception.get('skipped'):
+                    print(f"[SCOUT] Skipped {tweet['user']}: {tweet_perception.get('skip_reason')}")
+                    continue
+                    
                 tweet_score = self._calculate_tweet_score(tweet, tweet_perception)
                 scored_tweets.append((tweet, tweet_perception, tweet_score))
+
+            if not scored_tweets:
+                return FunctionResultStatus.DONE, "No valid tweets found (all filtered)", {}
 
             scored_tweets.sort(key=lambda x: x[2], reverse=True)
             target, perception, score = scored_tweets[0]
@@ -575,7 +602,7 @@ class SocialAgent:
             # REPOST
             if actions['repost']:
                 try:
-                    if repost_tweet(target['id']):
+                    if self.adapter.repost(target['id']):
                         behavior_engine.record_interaction(target['user'], target['id'], "REPOST")
                         human_like_controller.record_action('repost')
                         actions_taken.append("REPOSTED")
@@ -606,7 +633,7 @@ class SocialAgent:
 
                 if reply_content:
                     try:
-                        tweet_id = post_tweet(reply_content, reply_to=target['id'])
+                        tweet_id = self.adapter.reply(target['id'], reply_content)
 
                         if tweet_id and "Failed" not in str(tweet_id):
                             agent_memory.add_interaction(target['user'], target['text'], reply_content, tweet_id=target['id'])
@@ -653,12 +680,30 @@ class SocialAgent:
             user_id = tweet.get('user_id')
 
             if not user_id:
-                profile = get_user_profile(screen_name=user_handle)
-                if not profile:
+                user_obj = self.adapter.get_user(username=user_handle)
+                if not user_obj:
                     return
-                user_id = profile.get('id')
+                user_id = user_obj.id
+                profile = {
+                    'id': user_obj.id,
+                    'screen_name': user_obj.username,
+                    'name': user_obj.name,
+                    'description': user_obj.bio,
+                    'followers_count': user_obj.followers_count,
+                    'following_count': user_obj.following_count
+                }
             else:
-                profile = get_user_profile(user_id=user_id)
+                user_obj = self.adapter.get_user(user_id=user_id)
+                if not user_obj:
+                    return
+                profile = {
+                    'id': user_obj.id,
+                    'screen_name': user_obj.username,
+                    'name': user_obj.name,
+                    'description': user_obj.bio,
+                    'followers_count': user_obj.followers_count,
+                    'following_count': user_obj.following_count
+                }
 
             if not profile:
                 return
@@ -708,4 +753,4 @@ class SocialAgent:
             )
         ]
 
-social_agent = SocialAgent()
+# Global instance removed - injected in main.py

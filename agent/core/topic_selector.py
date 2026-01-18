@@ -78,7 +78,10 @@ class TopicSelector:
         self._recent_queries.append(keyword)
         self._last_selection = (keyword, source_name)
 
-        return keyword, source_name
+        # 쿼리 확장
+        enhanced_query = self._create_combinatorial_query(keyword)
+
+        return enhanced_query, source_name
 
     def _apply_cooldown(self, sources: List[TopicSource]) -> List[TopicSource]:
         """쿨다운 적용 - 최근 사용한 키워드 제외"""
@@ -108,6 +111,26 @@ class TopicSelector:
         selected = random.choices(candidates, weights=weights, k=1)[0]
 
         return selected[0], selected[1]
+
+    def _create_combinatorial_query(self, keyword: str) -> str:
+        """단순 키워드를 복합 쿼리로 변환 (스팸 필터링 + 관련성 강화)"""
+        # 1. 긍정/관련 키워드 조합 (OR 검색)
+        # TODO: 페르소나별 Config로 분리 필요
+        context_keywords = ["맛있다", "레시피", "만들기", "추천", "존맛", "요리", "먹고싶다", "맛집"]
+        context_query = " OR ".join(context_keywords)
+        
+        # 2. 부정 키워드 (제외)
+        negative_keywords = ["crypto", "nft", "giveaway", "bot", "promotion", "광고", "이벤트"]
+        negative_query = " ".join([f"-{nw}" for nw in negative_keywords])
+        
+        # 3. 필터
+        filters = "-filter:links -filter:replies"
+        
+        # 4. 최종 조합
+        # 예: 김치 (맛있다 OR 레시피 ...) -crypto -nft ... -filter:links
+        query = f'{keyword} ({context_query}) {negative_query} {filters}'
+        
+        return query
 
     def get_last_selection(self) -> Optional[Tuple[str, str]]:
         return self._last_selection

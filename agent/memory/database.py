@@ -219,8 +219,7 @@ class MemoryDatabase:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_relationships_last_interaction ON relationships(last_interaction_at)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_pattern_usage_type ON pattern_usage(pattern_type)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_pattern_usage_at ON pattern_usage(used_at)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_episodes_platform ON episodes(platform)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_posting_platform ON posting_history(platform)")
+
 
     def _migrate_db(self):
         """기존 DB에 platform 컬럼 추가 마이그레이션"""

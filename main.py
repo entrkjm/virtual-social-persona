@@ -3,7 +3,13 @@ Virtual Agent Entry Point
 Virtuals Protocol G.A.M.E SDK (Optional)
 """
 from config.settings import settings
-from agent.bot import social_agent
+from agent.bot import SocialAgent
+from agent.platforms.twitter.adapter import TwitterAdapter
+
+# Initialize Global Agent with Adapter
+adapter = TwitterAdapter()
+social_agent = SocialAgent(adapter)
+
 from agent.persona.persona_loader import active_persona
 from agent.core.mode_manager import mode_manager
 from agent.core.activity_scheduler import ActivityScheduler

@@ -86,11 +86,56 @@ class SeriesPlanner:
             for item in items:
                 if 'topic' in item:
                     valid_items.append(item)
+            
+            # 2. 내용 검증 (Validation Criteria 적용)
+            validation_criteria = config.get('validation_criteria')
+            if validation_criteria and valid_items:
+                print(f"[SeriesPlanner] Validating {len(valid_items)} curated topics...")
+                valid_items = self._validate_topics(valid_items, validation_criteria)
+                
             return valid_items
             
         except Exception as e:
             print(f"[SeriesPlanner] Curation failed: {e}")
             return []
+
+    def _validate_topics(self, items: List[Dict], criteria: str) -> List[Dict]:
+        """토픽이 시리즈 정의에 부합하는지 LLM으로 검증"""
+        topics_str = json.dumps([i['topic'] for i in items], ensure_ascii=False)
+        
+        prompt = f"""
+        Validate if the following topics meet the criteria.
+        
+        [Criteria]
+        {criteria}
+        
+        [Topics]
+        {topics_str}
+        
+        Output ONLY a JSON array of boolean values (true/false) corresponding to each topic in order.
+        Example: [true, false, true, true, false]
+        """
+        
+        try:
+            response = llm_client.generate(prompt)
+            clean_res = response.strip().replace("```json", "").replace("```", "")
+            results = json.loads(clean_res)
+            
+            filtered_items = []
+            for i, is_valid in enumerate(results):
+                if i < len(items):
+                    if is_valid:
+                        filtered_items.append(items[i])
+                    else:
+                        print(f"[SeriesPlanner] Rejected '{items[i]['topic']}': Did not meet criteria.")
+                        
+            return filtered_items
+            
+        except Exception as e:
+            print(f"[SeriesPlanner] Validation error: {e}")
+            return items # 에러 시 일단 통과 (Fail-open) 또는 Fail-close? Fail-open for now with log.
+            
+
 
     def get_last_used_at(self, platform: str, series_config: Dict) -> Optional[str]:
         return self.archiver.get_last_used_at(platform, series_config['id'])

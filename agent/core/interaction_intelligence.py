@@ -29,6 +29,41 @@ class InteractionIntelligence:
         domain_perspective = domain.perspective
         domain_relevance_desc = domain.relevance_desc
 
+        # [PRE-CALCULATION] 1. 언어 필터 (한국어 포함 여부)
+        # TODO: 페르소나 설정에 따라 언어 필터링 여부 결정해야 함. 일단 Chef Choi는 한국어 필수.
+        if not InteractionIntelligence._contains_korean(tweet_text):
+            return {
+                "topics": [],
+                "sentiment": "neutral",
+                "intent": "foreign_language",
+                "relevance_to_domain": 0.0,
+                "complexity": "simple",
+                "quip_category": "none",
+                "user_profile_hint": "외국어 사용자",
+                "my_angle": "",
+                "tweet_length": tweet_length,
+                "response_type": ResponseType.NORMAL,
+                "skipped": True,
+                "skip_reason": "No Korean text"
+            }
+
+        # [PRE-CALCULATION] 2. 스팸 필터 (키워드 기반)
+        if InteractionIntelligence._is_spam(tweet_text):
+            return {
+                "topics": [],
+                "sentiment": "negative",
+                "intent": "spam",
+                "relevance_to_domain": 0.0,
+                "complexity": "simple",
+                "quip_category": "none",
+                "user_profile_hint": "스팸/광고 계정",
+                "my_angle": "",
+                "tweet_length": tweet_length,
+                "response_type": ResponseType.NORMAL,
+                "skipped": True,
+                "skip_reason": "Spam keywords detected"
+            }
+
         perception_prompt = f"""
 다음 트윗을 분석하세요:
 
@@ -210,6 +245,28 @@ JSON 형식으로 출력 (다른 설명 없이 JSON만):
             perception = InteractionIntelligence.perceive_tweet(tweet['text'], tweet['user'])
             results.append(perception)
         return results
+
+    @staticmethod
+    def _contains_korean(text: str) -> bool:
+        """한글 포함 여부 확인"""
+        import re
+        # 한글 유니코드 범위: AC00-D7A3 (가-힣)
+        korean_pattern = re.compile(r'[가-힣]')
+        return bool(korean_pattern.search(text))
+
+    @staticmethod
+    def _is_spam(text: str) -> bool:
+        """스팸 키워드 확인"""
+        spam_keywords = [
+            "crypto", "nft", "airdrop", "giveaway", "follow back", "f4f",
+            "promotion", "dm for", "send me", "bitcoin", "eth", "solana",
+            "casino", "bet", "jackpot"
+        ]
+        text_lower = text.lower()
+        for kw in spam_keywords:
+            if kw in text_lower:
+                return True
+        return False
 
 # Global instance
 interaction_intelligence = InteractionIntelligence()
