@@ -23,9 +23,10 @@ class ModeConfig:
     sleep_enabled: bool
     random_breaks: bool
     # step 확률 (scout + mentions + post = 1.0)
-    scout_probability: float = 0.80
-    mentions_probability: float = 0.15
-    post_probability: float = 0.05
+    # None = 페르소나 값 사용, 값 지정 = 오버라이드
+    scout_probability: Optional[float] = None
+    mentions_probability: Optional[float] = None
+    post_probability: Optional[float] = None
     # action 확률 (Optional - None이면 페르소나 값 사용)
     like_probability: Optional[float] = None
     repost_probability: Optional[float] = None
@@ -39,10 +40,8 @@ MODE_CONFIGS: Dict[AgentMode, ModeConfig] = {
         step_interval_max=180,
         warmup_steps=5,
         sleep_enabled=True,
-        random_breaks=True,
-        scout_probability=0.80,
-        mentions_probability=0.15,
-        post_probability=0.05
+        random_breaks=True
+        # step 확률 None → 페르소나 값 사용
         # action 확률 None → 페르소나 값 사용
     ),
     # test: 중간 속도, 확률 오버라이드 (테스트)
@@ -67,9 +66,9 @@ MODE_CONFIGS: Dict[AgentMode, ModeConfig] = {
         warmup_steps=0,
         sleep_enabled=False,
         random_breaks=False,
-        scout_probability=0.70,
-        mentions_probability=0.15,
-        post_probability=0.15,
+        scout_probability=0.99,
+        mentions_probability=0.01,
+        post_probability=0.01,
         like_probability=0.60,
         repost_probability=0.60,
         comment_probability=0.18
@@ -150,6 +149,33 @@ class ModeManager:
 
     def should_take_break(self) -> bool:
         return self.config.random_breaks
+
+    def get_step_probabilities(self, behavior_config: Dict) -> Dict[str, float]:
+        """Get step probabilities (override or persona default)
+        
+        Args:
+            behavior_config: Persona behavior configuration
+            
+        Returns:
+            Dict with 'scout', 'mentions', 'post' probabilities
+        """
+        cfg = self.config
+        
+        # If mode has overrides, use them
+        if cfg.scout_probability is not None:
+            return {
+                'scout': cfg.scout_probability,
+                'mentions': cfg.mentions_probability,
+                'post': cfg.post_probability
+            }
+        
+        # Otherwise use persona values
+        step_probs = behavior_config.get('step_probabilities', {})
+        return {
+            'scout': step_probs.get('scout_probability', 0.80),
+            'mentions': step_probs.get('mentions_probability', 0.15),
+            'post': step_probs.get('post_probability', 0.05)
+        }
 
     def on_error(self, error_code: Optional[int] = None):
         """에러 발생 시 호출

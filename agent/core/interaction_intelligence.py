@@ -15,6 +15,7 @@ class ResponseType(str, Enum):
     SHORT = "short"    # 15-50자, 간단 프롬프트
     NORMAL = "normal"  # 50-100자, 표준 답글
     LONG = "long"      # 100+자, TMI 모드 (전문 분야 주제)
+    PERSONAL = "personal"  # 30-80자, 개인 감상 (전문성 없이)
 
 
 class InteractionIntelligence:
@@ -22,6 +23,7 @@ class InteractionIntelligence:
     @staticmethod
     def perceive_tweet(tweet_text: str, user_handle: str) -> Dict:
         """Perceive: 트윗 의미/감정/의도 분석 + 응답 유형 결정"""
+        tweet_length = len(tweet_text)
         domain = active_persona.domain
         domain_name = domain.name
         domain_perspective = domain.perspective
@@ -59,9 +61,12 @@ quip_category: 짧은 반응(1-15자)으로 충분한 경우 해당 카테고리
             response = llm_client.generate(perception_prompt, system_prompt="You are a tweet analyzer.")
             clean_response = response.replace("```json", "").replace("```", "").strip()
             perception = json.loads(clean_response)
+            perception["tweet_length"] = tweet_length
 
-            # response_type 결정
-            perception["response_type"] = InteractionIntelligence._determine_response_type(perception)
+            # response_type 결정 (config-driven)
+            perception["response_type"] = InteractionIntelligence._determine_response_type(
+                perception, active_persona.behavior
+            )
 
             return perception
         except Exception as e:
@@ -75,35 +80,68 @@ quip_category: 짧은 반응(1-15자)으로 충분한 경우 해당 카테고리
                 "quip_category": "none",
                 "user_profile_hint": "분석 실패",
                 "my_angle": "",
+                "tweet_length": tweet_length,
                 "response_type": ResponseType.NORMAL
             }
 
     @staticmethod
-    def _determine_response_type(perception: Dict) -> ResponseType:
-        """perception 기반 응답 유형 결정"""
-        complexity = perception.get("complexity", "moderate")
-        quip_cat = perception.get("quip_category", "none")
-        domain_rel = perception.get("relevance_to_domain", 0.0)
-        intent = perception.get("intent", "기타")
-
-        # QUIP: 짧은 반응으로 충분한 경우
-        if quip_cat != "none" and complexity == "simple":
-            return ResponseType.QUIP
-
-        # LONG: 도메인 관련도 높고 복잡한 주제
-        if domain_rel >= 0.7 and complexity == "complex":
-            return ResponseType.LONG
-
-        # LONG: 도메인 관련 구체적 질문
-        if intent == "질문" and domain_rel >= 0.5:
-            return ResponseType.LONG
-
-        # SHORT: 단순하지만 QUIP은 아닌 경우
-        if complexity == "simple":
-            return ResponseType.SHORT
-
-        # NORMAL: 기본
-        return ResponseType.NORMAL
+    def _determine_response_type(perception: Dict, behavior_config: Dict) -> ResponseType:
+        """Config-driven response type selection"""
+        import random
+        
+        strategy = behavior_config.get('response_strategy', {})
+        
+        # Get base probabilities
+        base_probs = strategy.get('base_probabilities', {
+            'quip': 0.20,
+            'short': 0.40,
+            'normal': 0.30,
+            'long': 0.05,
+            'personal': 0.05
+        })
+        
+        # Start with base probabilities
+        probs = dict(base_probs)
+        
+        # Apply tweet length modifiers
+        tweet_len = perception.get('tweet_length', 50)
+        length_mods = strategy.get('tweet_length_modifiers', {})
+        
+        if tweet_len <= length_mods.get('short_tweet', {}).get('threshold', 30):
+            mod_probs = length_mods.get('short_tweet', {}).get('probabilities', {})
+            probs.update(mod_probs)
+        elif tweet_len <= length_mods.get('medium_tweet', {}).get('threshold', 80):
+            mod_probs = length_mods.get('medium_tweet', {}).get('probabilities', {})
+            probs.update(mod_probs)
+        else:
+            mod_probs = length_mods.get('long_tweet', {}).get('probabilities', {})
+            probs.update(mod_probs)
+        
+        # Apply domain relevance modifiers
+        domain_rel = perception.get('relevance_to_domain', 0.0)
+        domain_mods = strategy.get('domain_modifiers', {})
+        
+        if domain_rel >= 0.7:
+            # High relevance
+            high_rel = domain_mods.get('high_relevance', {})
+            probs['long'] = max(0, probs.get('long', 0) + high_rel.get('long_boost', 0))
+            probs['personal'] = max(0, probs.get('personal', 0) + high_rel.get('personal_boost', 0))
+        elif domain_rel < 0.3:
+            # Low relevance
+            low_rel = domain_mods.get('low_relevance', {})
+            probs['long'] = max(0, probs.get('long', 0) + low_rel.get('long_penalty', 0))
+            probs['personal'] = max(0, probs.get('personal', 0) + low_rel.get('personal_boost', 0))
+        
+        # Normalize probabilities
+        total = sum(probs.values())
+        if total > 0:
+            probs = {k: v/total for k, v in probs.items()}
+        
+        # Weighted random selection
+        types = [ResponseType.QUIP, ResponseType.SHORT, ResponseType.NORMAL, ResponseType.LONG, ResponseType.PERSONAL]
+        weights = [probs.get(t.value, 0) for t in types]
+        
+        return random.choices(types, weights=weights)[0]
 
     @staticmethod
     def judge_with_context(

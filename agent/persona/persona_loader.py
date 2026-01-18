@@ -21,6 +21,7 @@ class DomainConfig:
 
 @dataclass
 class PersonaConfig:
+    id: str
     name: str
     identity: str
     occupation: str
@@ -34,6 +35,7 @@ class PersonaConfig:
     speech_style: Dict = field(default_factory=dict)
     behavior: Dict = field(default_factory=dict)
     relationships: Dict = field(default_factory=dict)
+    signature_series: Dict = field(default_factory=dict)
     raw_data: Dict = field(default_factory=dict)
 
 
@@ -90,6 +92,17 @@ class PersonaLoader:
             with open(relationships_path, 'r', encoding='utf-8') as f:
                 relationships = yaml.safe_load(f) or {}
 
+        # 선택: signature_series/*.yaml (플랫폼별 전략)
+        signature_series = {}
+        series_dir = os.path.join(persona_dir, "signature_series")
+        if os.path.exists(series_dir) and os.path.isdir(series_dir):
+            for filename in os.listdir(series_dir):
+                if filename.endswith(".yaml"):
+                    platform_name = filename[:-5]  # .yaml 제거
+                    file_path = os.path.join(series_dir, filename)
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        signature_series[platform_name] = yaml.safe_load(f) or {}
+
         # Domain 설정 로드
         domain_data = persona_data.get('domain', {})
         domain = DomainConfig(
@@ -101,6 +114,7 @@ class PersonaLoader:
         )
 
         return PersonaConfig(
+            id=persona_name,
             name=persona_data['name'],
             identity=persona_data['identity'],
             occupation=persona_data['occupation'],
@@ -114,6 +128,7 @@ class PersonaLoader:
             speech_style=persona_data.get('speech_style', {}),
             behavior=behavior,
             relationships=relationships,
+            signature_series=signature_series,
             raw_data=persona_data
         )
 

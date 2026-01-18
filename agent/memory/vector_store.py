@@ -271,5 +271,5 @@ class VectorStore:
         }
 
 
-# Global instance
-vector_store = VectorStore()
+# Global instance removed
+# vector_store = VectorStore()

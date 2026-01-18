@@ -34,6 +34,10 @@ class Settings:
     GCP_LOCATION = os.getenv("GCP_LOCATION", "us-central1")
     GOOGLE_APPLICATION_CREDENTIALS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "gcp-key.json")
 
+    # Vision & Image Gen
+    IMAGEN_MODEL = os.getenv("IMAGEN_MODEL", "imagen-3.0-generate-001")
+    GEMINI_VISION_MODEL = os.getenv("GEMINI_VISION_MODEL", "gemini-2.0-flash-exp")
+
     # Agent 모드 설정 (normal | test | aggressive)
     AGENT_MODE = os.getenv("AGENT_MODE", "normal")
 

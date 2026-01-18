@@ -45,17 +45,17 @@ class InspirationPool:
         vector_store: Optional[VectorStore] = None,
         tier_manager: Optional[TierManager] = None
     ):
-        from agent.memory.database import memory_db
-        from agent.memory.tier_manager import tier_manager as tm
+        # Global instances removed
+        # from agent.memory.database import memory_db
+        # from agent.memory.tier_manager import tier_manager as tm
+        # try:
+        #     from agent.memory.vector_store import vector_store as vs
+        # except ImportError:
+        #     vs = None
 
-        try:
-            from agent.memory.vector_store import vector_store as vs
-        except ImportError:
-            vs = None
-
-        self.db = db or memory_db
-        self.vector_store = vector_store or vs
-        self.tier_manager = tier_manager or tm
+        self.db = db
+        self.vector_store = vector_store
+        self.tier_manager = tier_manager
 
         # 강화 설정
         self.REINFORCEMENT_CONFIG = {

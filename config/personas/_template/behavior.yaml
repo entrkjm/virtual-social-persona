@@ -1,6 +1,44 @@
 # Behavior Config Template
 # 새 페르소나 생성 시 복사 후 수정
 
+# Step 행동 확률 (각 step에서 어떤 행동을 할지)
+# 합계는 1.0이어야 함
+step_probabilities:
+  scout_probability: 0.80      # 타임라인 탐색 확률
+  mentions_probability: 0.15   # 멘션 확인 확률
+  post_probability: 0.05       # 독립 포스팅 확률
+
+# 응답 길이/타입 전략
+response_strategy:
+  base_probabilities:
+    quip: 0.20
+    short: 0.40
+    normal: 0.30
+    long: 0.05
+    personal: 0.05
+  
+  tweet_length_modifiers:
+    short_tweet:
+      threshold: 30
+      probabilities: {quip: 0.50, short: 0.40, normal: 0.10, long: 0.0, personal: 0.0}
+    medium_tweet:
+      threshold: 80
+      probabilities: {quip: 0.20, short: 0.40, normal: 0.30, long: 0.05, personal: 0.05}
+    long_tweet:
+      probabilities: {quip: 0.10, short: 0.25, normal: 0.40, long: 0.15, personal: 0.10}
+  
+  domain_modifiers:
+    high_relevance: {long_boost: 0.15, personal_boost: 0.05}
+    low_relevance: {long_penalty: -0.10, personal_boost: 0.10}
+  
+  personal_mode:
+    use_domain_metaphor_probability: 0.30
+    tone: "casual"
+    min_length: 30
+    max_length: 80
+    avoid: ["advice", "tips"]
+    prefer: ["feelings", "impressions"]
+
 # 시간대별 검색 키워드 (빈 배열 = core_keywords 사용)
 time_keywords:
   morning: []       # 06-11시

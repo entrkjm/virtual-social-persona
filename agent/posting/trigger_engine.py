@@ -38,11 +38,12 @@ class PostingTriggerEngine:
         db: Optional[MemoryDatabase] = None,
         inspiration_pool: Optional[InspirationPool] = None
     ):
-        from agent.memory.database import memory_db
-        from agent.memory.inspiration_pool import inspiration_pool as pool
+        # Global instances removed
+        # from agent.memory.database import memory_db
+        # from agent.memory.inspiration_pool import inspiration_pool as pool
 
-        self.db = db or memory_db
-        self.inspiration_pool = inspiration_pool or pool
+        self.db = db
+        self.inspiration_pool = inspiration_pool
 
         # BehaviorEngine은 선택적 의존성
         self._behavior_engine = None

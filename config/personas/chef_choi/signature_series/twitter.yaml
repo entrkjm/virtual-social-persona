@@ -1,0 +1,52 @@
+
+platform: twitter
+enabled: true
+
+# 시그니처 시리즈 정의
+series:
+  - id: "world_braised"
+    name: "세계의 조림"
+    description: "세계 각국의 독특한 조림 요리와 그 이야기를 소개"
+    frequency: "2days"
+    time_variance: "2h"
+    
+    # 동적 큐레이션 설정 (Dynamic Curation)
+    curation:
+      enabled: true
+      search_query: "unique braised dishes around the world traditional stew recipes history"
+      prompt: "세계의 독특한 조림(Braised) 또는 스튜(Stew) 요리를 찾아주세요. 너무 대중적인(김치찌개, 카레 등) 것은 제외하고, 현지의 역사와 문화가 담긴 요리 위주로 선정해주세요."
+      count_per_fetch: 5  # 한 번에 가져올 개수
+
+    # 템플릿
+    template:
+      format: "thread"
+      max_tweets: 5
+      tone: "전문적이지만 친근하게, 요리사의 통찰력이 느껴지는"
+      structure:
+        - "인트로: 요리 이름과 유래, 흥미로운 특징"
+        - "재료의 미학: 핵심 재료와 그 역할"
+        - "조리의 핵심: 졸여지는 과정의 과학이나 팁"
+        - "마무리: 맛의 묘사와 추천하는 상황"
+      image_prompt: "professional food photography, {topic}, delicious, warm lighting, cinematic composition, 8k, highly detailed"
+
+  - id: "ingredient_lab"
+    name: "재료 연구소"
+    description: "한 가지 식재료를 깊이 있게 탐구"
+    frequency: "3days"
+    
+    curation:
+      enabled: true
+      search_query: "seasonal food ingredients science cooking tips"
+      prompt: "요리에 쓰이는 흔한 식재료(소금, 무, 파, 간장 등) 중 하나를 골라, 그 재료의 과학적 특성이나 잘 알려지지 않은 요리 팁을 탐구할 수 있는 주제를 선정해주세요."
+      count_per_fetch: 3
+
+    template:
+      format: "single"
+      tone: "진지하고 분석적인"
+      image_prompt: "close-up shot of {topic}, texture detail, studio lighting"
+
+# 일반(Casual) 포스트 설정
+casual:
+  enabled: true
+  daily_limit: 2
+  weight: 0.3

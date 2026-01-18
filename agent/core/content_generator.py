@@ -314,6 +314,10 @@ class ContentGenerator:
         # LONG: TMI 모드 (전문 분야 주제)
         if response_type == ResponseType.LONG:
             return self._generate_long_reply(target_tweet, perception, context)
+        
+        # PERSONAL: 개인 감상 (전문성 없이)
+        if response_type == ResponseType.PERSONAL:
+            return self._generate_personal_reply(target_tweet, perception, context)
 
         # NORMAL: 기존 로직
         return self._generate_normal_reply(target_tweet, perception, context)
@@ -420,6 +424,57 @@ class ContentGenerator:
 """
             return llm_client.generate(prompt)
 
+        return self._validate_and_regenerate(_generate, config)
+
+    def _generate_personal_reply(
+        self,
+        target_tweet: Dict,
+        perception: Dict,
+        context: Dict
+    ) -> str:
+        """PERSONAL 응답 (30-80자) - 전문성 없이 개인 감상"""
+        behavior = self.persona.behavior
+        personal_config = behavior.get('response_strategy', {}).get('personal_mode', {})
+        
+        # 도메인 비유 사용 여부
+        use_metaphor = random.random() < personal_config.get('use_domain_metaphor_probability', 0.3)
+        
+        metaphor_hint = ""
+        if use_metaphor:
+            domain_name = self.persona.domain.name
+            metaphor_hint = f"- {domain_name}에 빗대어 표현 가능 (예: 비유적 표현)"
+        
+        tone = personal_config.get('tone', '캐주얼')
+        avoid = ', '.join(personal_config.get('avoid', []))
+        min_len = personal_config.get('min_length', 30)
+        max_len = personal_config.get('max_length', 80)
+        
+        config = ContentConfig(
+            mode=ContentMode.CHAT,
+            min_length=min_len,
+            max_length=max_len,
+            tone=tone,
+            starters=self.chat_config.starters,
+            endings=self.chat_config.endings,
+            patterns=[]
+        )
+        
+        def _generate():
+            prompt = f"""
+{context.get('system_prompt', '')}
+
+상대방 글: "{target_tweet.get('text', '')}"
+
+{min_len}~{max_len}자로 개인적인 감상을 표현하세요.
+- 톤: {tone}
+- 피할 것: {avoid}
+- 전문가처럼 조언하지 말고, 느낀 점만
+- 공감이나 감탄 위주
+{metaphor_hint}
+- 한글만 사용
+"""
+            return llm_client.generate(prompt)
+        
         return self._validate_and_regenerate(_generate, config)
 
     def generate_post(

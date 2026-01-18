@@ -10,7 +10,7 @@ from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 
 from config.settings import settings
-from agent.memory.database import memory_db
+# from agent.memory.database import memory_db
 
 
 @dataclass
@@ -33,8 +33,8 @@ class PatternRegistry:
 
 
 class PatternTracker:
-    def __init__(self, pattern_registry: Optional[Dict] = None):
-        self.db = memory_db
+    def __init__(self, db, pattern_registry: Optional[Dict] = None):
+        self.db = db
         self.registry = self._parse_registry(pattern_registry or {})
 
     def _parse_registry(self, config: Dict) -> PatternRegistry:

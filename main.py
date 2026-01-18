@@ -191,17 +191,18 @@ def run_standalone():
                     continue
 
                 roll = random.random()
-                cfg = mode_manager.config
+                step_probs = mode_manager.get_step_probabilities(persona.behavior)
 
-                if roll < cfg.scout_probability:
+                if roll < step_probs['scout']:
                     action_name = "scout_timeline"
                     status, message, data = social_agent.scout_and_respond()
-                elif roll < cfg.scout_probability + cfg.mentions_probability:
+                elif roll < step_probs['scout'] + step_probs['mentions']:
                     action_name = "check_mentions"
                     status, message, data = social_agent.check_mentions()
                 else:
                     action_name = "post_tweet"
                     status, message, data = social_agent.post_tweet_executable(content="")
+
 
                 print(f"[STEP {step_count}] {action_name}: {message}")
                 step_count += 1

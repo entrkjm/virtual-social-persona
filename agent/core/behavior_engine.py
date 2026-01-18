@@ -11,7 +11,7 @@ from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from config.settings import settings
 from agent.persona.persona_loader import active_persona_name, active_persona
-from agent.core.mode_manager import mode_manager
+from agent.core.mode_manager import mode_manager, AgentMode
 
 
 @dataclass
@@ -401,13 +401,18 @@ class BehaviorEngine:
         if user_count >= max_per_day:
             if not (same_user_config.get('obsession_override', True) and
                     self._is_obsession_topic(topics)):
+                # AGGRESSIVE 모드에서는 한도 초과해도 약간의 확률 부여
+                if mode_manager.mode == AgentMode.AGGRESSIVE:
+                    return 0.3
                 return 0.05  # 거의 스킵
 
         # 2. 쿨다운 체크
         if self._is_in_cooldown(user_handle):
             if not (same_user_config.get('obsession_override', True) and
                     self._is_obsession_topic(topics)):
-                base_prob *= 0.3
+                # AGGRESSIVE 모드에서는 쿨다운 페널티 완화
+                multiplier = 0.8 if mode_manager.mode == AgentMode.AGGRESSIVE else 0.3
+                base_prob *= multiplier
 
         # 3. 같은 게시물 댓글 수 체크
         same_post_config = self.config.get('interaction_patterns', {}).get('same_post', {})
@@ -417,18 +422,24 @@ class BehaviorEngine:
         if comment_count >= max_comments:
             return 0.0  # 하드 리밋
 
-        # 4. 현타 체크
-        if self._check_regret(post_id):
-            return 0.0  # 현타 발동
+        # 4. 현타 체크 (AGGRESSIVE에서는 무시)
+        if mode_manager.mode != AgentMode.AGGRESSIVE and self._check_regret(post_id):
+            return 0.0
 
         # 5. 기분 반영
         context['recent_sentiment'] = sentiment
         mood = self._calculate_current_mood(context)
-        base_prob *= (0.5 + mood * 0.5)
+        # AGGRESSIVE에서는 기분 영향 최소화
+        mood_impact = 0.2 if mode_manager.mode == AgentMode.AGGRESSIVE else 0.5
+        base_prob *= (1.0 - mood_impact) + (mood * mood_impact)
 
         # 6. 관계 반영
         relationship_factor = self._get_relationship_factor(relationship)
+        # AGGRESSIVE에서는 낯가림 완화
+        if mode_manager.mode == AgentMode.AGGRESSIVE and relationship_factor < 1.0:
+            relationship_factor = 0.9
         base_prob *= relationship_factor
+
 
         # 7. 감정 반영
         sentiment_factor = self._get_sentiment_factor(sentiment)
@@ -444,8 +455,15 @@ class BehaviorEngine:
 
         # 10. 내향성 반영
         introversion = self.config.get('personality_traits', {}).get('introversion', 0.85)
-        base_prob *= (1.0 - introversion * 0.5)
+        # AGGRESSIVE에서는 내향성 영향 대폭 축소
+        introversion_impact = 0.2 if mode_manager.mode == AgentMode.AGGRESSIVE else 0.5
+        base_prob *= (1.0 - introversion * introversion_impact)
 
+        if mode_manager.mode == AgentMode.AGGRESSIVE:
+             i_impact = 0.2
+             m_impact = 0.2
+             print(f"[PROB-DEBUG] RelFactor:{relationship_factor:.2f} SentFactor:{sentiment_factor:.2f} TopicFactor:{topic_factor:.2f} Fatigue:{fatigue_factor:.2f}")
+             print(f"[PROB] Base:{base_prob:.2f} (Introversion:{1.0-introversion*i_impact:.2f}, Mood:{1.0-m_impact:.2f})")
         return min(max(base_prob, 0.0), 1.0)
 
     def decide_action_type(self) -> str:
@@ -488,7 +506,12 @@ class BehaviorEngine:
 
         # 관련도 기반 조정 (0.3 ~ 1.0)
         relevance = perception.get('relevance_to_domain', 0.5) if perception else 0.5
-        relevance_factor = 0.3 + (relevance * 0.7)
+        
+        # AGGRESSIVE 모드면 관련도 보정 (최소 0.9 보장)
+        if mode_manager.mode == AgentMode.AGGRESSIVE:
+            relevance_factor = max(0.9, 0.3 + (relevance * 0.7))
+        else:
+            relevance_factor = 0.3 + (relevance * 0.7)
 
         # 인기도 기반 조정 (engagement)
         engagement = tweet.get('engagement', {}) if tweet else {}
@@ -505,8 +528,12 @@ class BehaviorEngine:
         comment_prob = base_comment * relevance_factor
 
         # repost 최소 관련도 임계값 (0.4 미만이면 repost 안 함)
-        if relevance < 0.4:
+        if relevance < 0.4 and mode_manager.mode != AgentMode.AGGRESSIVE:
             repost_prob = 0
+
+        # 로깅을 위한 확률 정보 출력 (옵션)
+        if mode_manager.mode == AgentMode.AGGRESSIVE:
+             print(f"[DECIDE] Rel:{relevance:.2f} -> Factor:{relevance_factor:.2f} | Base(L/R/C):{base_like:.2f}/{base_repost:.2f}/{base_comment:.2f} -> Final:{like_prob:.2f}/{repost_prob:.2f}/{comment_prob:.2f}")
 
         return {
             'like': random.random() < like_prob,
@@ -536,8 +563,8 @@ class BehaviorEngine:
                 mood_state=self.current_mood
             )
 
-        # 상호작용하기로 결정 (suggested_action은 레거시, bot.py에서 decide_actions() 직접 사용)
-        suggested_action = "INTERACT"
+        # 상호작용 의사 결정 (suggested_action은 레거시)
+        suggested_action = "INTERESTED"
 
         # 집착 주제면 더 적극적으로
         if self._is_obsession_topic(topics) and suggested_action == "LURK":
@@ -549,7 +576,7 @@ class BehaviorEngine:
         reason = self._get_interact_reason(context, probability, suggested_action)
 
         return BehaviorDecision(
-            decision="INTERACT",
+            decision="INTERESTED",
             reason=reason,
             suggested_action=suggested_action,
             confidence=probability,

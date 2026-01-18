@@ -580,5 +580,5 @@ def generate_id() -> str:
     return str(uuid.uuid4())
 
 
-# Global instance
-memory_db = MemoryDatabase()
+# Global instance removed
+# memory_db = MemoryDatabase()

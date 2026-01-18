@@ -1,9 +1,6 @@
 """
 Twitter API via Twikit
 트위터 API 래퍼 - 포스트, 검색, 좋아요, 멘션, 알림
-Wrapper for Twitter API using Twikit
-
-확장성: 추후 Twitter API v2 전환 시 _search_tweets_twikit만 교체
 """
 import os
 import asyncio
@@ -30,14 +27,13 @@ class TweetData(TypedDict, total=False):
     created_at: str
     engagement: TweetEngagement
 
+
 COOKIES_FILE = os.path.join(settings.DATA_DIR, "twitter_cookies.json")
 
 
 async def _get_twikit_client():
     """
     Twikit 클라이언트 생성
-    1. 쿠키 파일 있으면 로드
-    2. 없거나 만료되면 로그인 후 저장
     """
     client = Client('en-US')
 
@@ -45,12 +41,11 @@ async def _get_twikit_client():
     if os.path.exists(COOKIES_FILE):
         try:
             client.load_cookies(COOKIES_FILE)
-            print("[TWITTER] 쿠키 로드 성공")
             return client
         except Exception as e:
             print(f"[TWITTER] 쿠키 로드 실패: {e}")
 
-    # 환경변수 쿠키 시도 (기존 방식 fallback)
+    # 환경변수 쿠키 시도
     auth_token = os.getenv("TWITTER_AUTH_TOKEN")
     ct0 = os.getenv("TWITTER_CT0")
     if auth_token and ct0:
@@ -99,19 +94,55 @@ async def _with_retry(func, *args, **kwargs):
         raise
 
 
-async def _post_tweet_twikit(content: str, reply_to: str = None):
+async def _upload_media_twikit(client: Client, media_files: List[str]) -> List[str]:
+    """미디어 업로드 -> media_id 리스트 반환"""
+    media_ids = []
+    for filename in media_files:
+        if not os.path.exists(filename):
+            print(f"[TWITTER] Media file not found: {filename}")
+            continue
+        try:
+            # upload_media returns a Media object or ID depending on version/endpoint
+            media = await client.upload_media(filename, media_category='tweet_image')
+            
+            media_id = None
+            if hasattr(media, 'media_id'):
+                media_id = media.media_id
+            elif hasattr(media, 'id'):
+                media_id = media.id
+            elif isinstance(media, (int, str)):
+                media_id = str(media)
+            else:
+                print(f"[TWITTER] Unknown media response type: {type(media)}")
+                continue
+                
+            if media_id:
+                media_ids.append(media_id)
+        except Exception as e:
+            print(f"[TWITTER] Failed to upload media {filename}: {e}")
+            import traceback
+            traceback.print_exc()
+    return media_ids
+
+
+async def _post_tweet_twikit(content: str, reply_to: str = None, media_files: List[str] = None):
     async def _do():
         client = await _get_twikit_client()
+        
+        media_ids = None
+        if media_files:
+            media_ids = await _upload_media_twikit(client, media_files)
+            
         if reply_to:
-            tweet = await client.create_tweet(text=content, reply_to=reply_to)
+            tweet = await client.create_tweet(text=content, reply_to=reply_to, media_ids=media_ids)
         else:
-            tweet = await client.create_tweet(text=content)
+            tweet = await client.create_tweet(text=content, media_ids=media_ids)
         return tweet.id
     return await _with_retry(_do)
 
 
 def _extract_engagement(tweet) -> TweetEngagement:
-    """twikit Tweet 객체에서 engagement 추출 (안전하게)"""
+    """twikit Tweet 객체에서 engagement 추출"""
     return {
         'favorite_count': getattr(tweet, 'favorite_count', 0) or 0,
         'retweet_count': getattr(tweet, 'retweet_count', 0) or 0,
@@ -140,7 +171,7 @@ async def _search_tweets_twikit(query: str, count: int = 5) -> List[TweetData]:
 
 
 def _twitter_weighted_len(text: str) -> int:
-    """Twitter 가중치 글자수 (한글/한자/일본어 = 2, 나머지 = 1)"""
+    """Twitter 가중치 글자수"""
     count = 0
     for char in text:
         if '\u1100' <= char <= '\u11FF' or '\u3130' <= char <= '\u318F' or '\uAC00' <= char <= '\uD7AF':
@@ -151,15 +182,14 @@ def _twitter_weighted_len(text: str) -> int:
             count += 1
     return count
 
-def post_tweet(content: str, reply_to: str = None) -> str:
-    """트윗 게시 / Post tweet"""
+def post_tweet(content: str, reply_to: str = None, media_files: List[str] = None) -> str:
+    """트윗 게시 / Post tweet (with optional media)"""
     weighted_len = _twitter_weighted_len(content)
     if weighted_len > 280:
         target_chars = len(content) * 280 // weighted_len - 3
-        print(f"[TWEET] 가중치 글자수 초과 ({weighted_len}), {target_chars}자로 자름")
         content = content[:target_chars] + "..."
     try:
-        tweet_id = asyncio.run(_post_tweet_twikit(content, reply_to))
+        tweet_id = asyncio.run(_post_tweet_twikit(content, reply_to, media_files))
         print(f"[TWEET] posted {tweet_id}")
         return str(tweet_id)
     except Exception as e:
