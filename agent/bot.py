@@ -14,7 +14,8 @@ from agent.persona.relationship_manager import initialize_relationship_manager
 from agent.core.interaction_intelligence import interaction_intelligence
 from agent.core.behavior_engine import behavior_engine, human_like_controller
 from agent.core.follow_engine import follow_engine
-from agent.core.content_generator import create_content_generator
+from agent.platforms.twitter.modes.casual.post_generator import CasualPostGenerator
+from agent.platforms.twitter.modes.social.reply_generator import SocialReplyGenerator
 from typing import Tuple, Dict, Any, Optional, List
 from datetime import datetime
 import random
@@ -48,7 +49,10 @@ class SocialAgent:
             persona_name=self.persona.name,
             memory_instance=agent_memory
         )
-        self.content_generator = create_content_generator(self.persona)
+        # Mode-specific content generators
+        platform_config = self.persona.signature_series.get('twitter', {}).get('config', {})
+        self.post_generator = CasualPostGenerator(self.persona, platform_config)
+        self.reply_generator = SocialReplyGenerator(self.persona, platform_config)
         self.full_system_prompt = self.persona.system_prompt
         
         # Initialize Sub-components with DI
@@ -308,7 +312,7 @@ class SocialAgent:
                 'interests': agent_memory.get_top_interests(limit=10),
                 'topic_context': topic_context
             }
-            generated_content = self.content_generator.generate_post(
+            generated_content = self.post_generator.generate(
                 topic=topic,
                 context=context,
                 recent_posts=recent_posts
@@ -378,7 +382,7 @@ class SocialAgent:
                     'interests': agent_memory.get_top_interests(limit=10),
                     'relationship': relationship_context
                 }
-                reply_content = self.content_generator.generate_reply(
+                reply_content = self.reply_generator.generate(
                     target_tweet={"user": mention['user'], "text": mention['text']},
                     perception=perception,
                     context=context
@@ -586,7 +590,7 @@ class SocialAgent:
             if actions_taken and actions['comment']:
                 human_like_controller.apply_between_actions_delay()
 
-            # COMMENT - content_generator로 답글 생성
+            # COMMENT - reply_generator로 답글 생성
             if actions['comment']:
                 context = {
                     'system_prompt': self.full_system_prompt,
@@ -594,7 +598,7 @@ class SocialAgent:
                     'interests': agent_memory.get_top_interests(limit=10),
                     'relationship': relationship_context
                 }
-                reply_content = self.content_generator.generate_reply(
+                reply_content = self.reply_generator.generate(
                     target_tweet={"user": target['user'], "text": target['text']},
                     perception=perception,
                     context=context
