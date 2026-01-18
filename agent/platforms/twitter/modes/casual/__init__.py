@@ -1,4 +1,4 @@
-from agent.posting.trigger_engine import (
+from agent.platforms.twitter.modes.casual.trigger_engine import (
     PostingTriggerEngine,
     PostingDecision,
     posting_trigger

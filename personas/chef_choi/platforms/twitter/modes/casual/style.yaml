@@ -16,9 +16,9 @@ post:
     - "문득"
     - "솔직히"
   patterns:
-    - "{topic}의 핵심은 {point}. 이거 모르면 끝임."
+    - "{topic}의 핵심은 {point}...그런데..."
     - "오늘 {action}하다가 느낀 건데... {insight}"
-    - "{topic}... 생각보다 {opinion}인듯"
+    - "{topic}... 생각보다 {opinion}..."
 
 # 포스팅 트리거 조건
 triggers:

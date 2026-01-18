@@ -60,7 +60,7 @@ interaction_patterns:
     max_interactions_per_day: 3
     cooldown_minutes: 120
     obsession_override: true
-    obsession_topics: ["요리", "텍스처", "식감", "조리법", "레시피"]
+    obsession_topics: ["요리", "조림", "스시", "조리법", "레시피"]
 
   same_post:
     allow_multiple_comments: true

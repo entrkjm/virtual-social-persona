@@ -5,7 +5,7 @@ Series Planner
 import random
 import json
 from typing import List, Optional, Dict, Any
-from agent.series.archiver import SeriesArchiver
+from agent.platforms.twitter.modes.series.archiver import SeriesArchiver
 from core.llm import llm_client
 
 class SeriesPlanner:

@@ -25,10 +25,10 @@ from agent.memory.database import Episode, generate_id
 from agent.memory.inspiration_pool import InspirationPool
 from agent.memory.tier_manager import TierManager
 from agent.memory.consolidator import MemoryConsolidator
-from agent.posting.trigger_engine import PostingTriggerEngine
+from agent.platforms.twitter.modes.casual.trigger_engine import PostingTriggerEngine
 from agent.core.topic_selector import TopicSelector
 from agent.knowledge.knowledge_base import KnowledgeBase
-from agent.series.engine import SeriesEngine
+from agent.platforms.twitter.modes.series.engine import SeriesEngine
 from agent.persona.pattern_tracker import PatternTracker
 
 class SocialAgent:

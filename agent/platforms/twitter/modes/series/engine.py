@@ -7,11 +7,11 @@ from datetime import datetime, timedelta
 import random
 
 from agent.persona.persona_loader import PersonaConfig
-from agent.series.planner import SeriesPlanner
-from agent.series.writer import ContentWriter
-from agent.series.archiver import SeriesArchiver
-from agent.series.studio import ImageGenerator, ImageCritic
-from agent.series.adapters.twitter import TwitterAdapter
+from agent.platforms.twitter.modes.series.planner import SeriesPlanner
+from agent.platforms.twitter.modes.series.writer import ContentWriter
+from agent.platforms.twitter.modes.series.archiver import SeriesArchiver
+from agent.platforms.twitter.modes.series.studio import ImageGenerator, ImageCritic
+from agent.platforms.twitter.modes.series.adapters.twitter import TwitterAdapter
 
 class SeriesEngine:
     def __init__(self, persona: PersonaConfig):

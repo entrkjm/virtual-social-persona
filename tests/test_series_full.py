@@ -9,7 +9,7 @@ import os
 sys.path.append(os.getcwd())
 
 from agent.persona.persona_loader import PersonaLoader
-from agent.series.engine import SeriesEngine
+from agent.platforms.twitter.modes.series.engine import SeriesEngine
 from config.settings import settings
 
 def test_series():
