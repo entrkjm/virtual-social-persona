@@ -29,6 +29,7 @@ class PatternRegistry:
     frequent: Dict   # max_consecutive 기반
     filler: Dict     # max_per_post 기반
     contextual: Dict # 맥락별 설정
+    persona_traits: Dict  # 페르소나 특성 설명
 
 
 class PatternTracker:
@@ -40,17 +41,26 @@ class PatternTracker:
         return PatternRegistry(
             signature=config.get('signature', {
                 'patterns': [],
-                'cooldown_posts': 5
+                'cooldown_posts': 5,
+                'is_core_trait': False
             }),
             frequent=config.get('frequent', {
                 'patterns': [],
-                'max_consecutive': 2
+                'max_consecutive': 2,
+                'min_consecutive': 0,
+                'is_core_trait': False
             }),
             filler=config.get('filler', {
                 'patterns': [],
-                'max_per_post': 1
+                'max_per_post': 2,
+                'min_per_post': 0,
+                'is_core_trait': False
             }),
-            contextual=config.get('contextual', {})
+            contextual=config.get('contextual', {}),
+            persona_traits=config.get('persona_traits', {
+                'description': '',
+                'core_characteristics': []
+            })
         )
 
     def record_usage(self, text: str, post_id: Optional[str] = None) -> List[str]:
@@ -250,11 +260,73 @@ class PatternTracker:
         patterns = config.get('patterns', [])
         return [p for p in patterns if p != avoid_pattern]
 
+    def get_persona_preservation_prompt(self) -> str:
+        """페르소나 보존을 위한 리뷰어 가이드 생성"""
+        lines = []
+
+        # 페르소나 설명
+        traits = self.registry.persona_traits
+        if traits.get('description'):
+            lines.append(f"### 페르소나 특성:")
+            lines.append(f"- {traits['description']}")
+
+        if traits.get('core_characteristics'):
+            lines.append("\n### 핵심 특성 (반드시 유지):")
+            for char in traits['core_characteristics']:
+                lines.append(f"- {char}")
+
+        # 보존해야 할 패턴
+        preserve_rules = []
+
+        # filler 보존 규칙
+        filler = self.registry.filler
+        if filler.get('is_core_trait') and filler.get('min_per_post', 0) > 0:
+            patterns_str = ', '.join(filler.get('patterns', [])[:3])
+            reason = filler.get('preserve_reason', '페르소나 특성')
+            preserve_rules.append(
+                f"- 채움말({patterns_str})은 최소 {filler['min_per_post']}회 유지 "
+                f"(이유: {reason})"
+            )
+
+        # signature 보존 규칙
+        signature = self.registry.signature
+        if signature.get('is_core_trait'):
+            preserve_rules.append(
+                f"- 시그니처 표현은 삭제하지 말고, 쿨다운만 준수"
+            )
+
+        if preserve_rules:
+            lines.append("\n### 패턴 보존 규칙:")
+            lines.extend(preserve_rules)
+
+        # 교정 한도 설명
+        limits = []
+        filler_max = filler.get('max_per_post', 2)
+        filler_min = filler.get('min_per_post', 0)
+        if filler_max > 0:
+            limits.append(f"- 채움말: {filler_min}~{filler_max}회 범위로 유지")
+
+        frequent = self.registry.frequent
+        freq_max = frequent.get('max_consecutive', 2)
+        if freq_max > 0:
+            limits.append(f"- 어미 패턴: 연속 {freq_max}회 이상만 교정")
+
+        if limits:
+            lines.append("\n### 교정 범위:")
+            lines.extend(limits)
+            lines.append("- 범위 내라면 교정하지 마세요")
+
+        return '\n'.join(lines) if lines else ""
+
 
 def create_pattern_tracker(persona_config) -> PatternTracker:
     """페르소나 설정에서 PatternTracker 생성"""
     registry = {}
-    if hasattr(persona_config, 'pattern_registry'):
+
+    # PersonaConfig 객체인 경우 raw_data에서 가져옴
+    if hasattr(persona_config, 'raw_data'):
+        registry = persona_config.raw_data.get('pattern_registry', {})
+    elif hasattr(persona_config, 'pattern_registry'):
         registry = persona_config.pattern_registry
     elif isinstance(persona_config, dict):
         registry = persona_config.get('pattern_registry', {})

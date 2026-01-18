@@ -67,6 +67,51 @@ time_keywords:
 system_prompt_file: "prompt.txt"
 engagement_rules_file: "rules.txt"
 
+# ===========================================
+# Pattern Registry (말투 패턴 관리)
+# ===========================================
+pattern_registry:
+  # 시그니처: 특별한 순간에만 사용
+  signature:
+    patterns:
+      - "시그니처 표현 1"
+    cooldown_posts: 5           # N개 포스트 후에 다시 사용 가능
+    is_core_trait: false        # 페르소나 핵심 특성인지
+
+  # frequent: 자주 쓰는 어미
+  frequent:
+    patterns:
+      - "~거든요"
+      - "~같아요"
+    max_consecutive: 2          # 연속 N회까지 허용
+    min_consecutive: 0          # 최소 유지 횟수
+    is_core_trait: false
+
+  # filler: 채움말 (음..., 아... 등)
+  filler:
+    patterns:
+      - "음..."
+      - "아..."
+    max_per_post: 2             # 글당 최대 허용
+    min_per_post: 0             # 글당 최소 유지 (페르소나 보존용)
+    is_core_trait: false        # true면 리뷰어가 삭제 안 함
+    preserve_reason: ""         # is_core_trait=true일 때 이유
+
+  # contextual: 맥락별 조절
+  contextual:
+    serious_topic:
+      avoid: ["ㅎㅎ", "ㅋㅋ"]
+      prefer: ["~입니다"]
+    casual_topic:
+      allow: ["ㅎㅎ", "~임"]
+
+  # 페르소나 특성 (리뷰어에게 전달)
+  persona_traits:
+    description: "페르소나 한 줄 설명"
+    core_characteristics:
+      - "핵심 특성 1"
+      - "핵심 특성 2"
+
 # 에이전트 설정
 agent_goal: "에이전트 목표"
 agent_description: "에이전트 설명"

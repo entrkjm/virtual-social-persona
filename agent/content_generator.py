@@ -12,6 +12,19 @@ from core.llm import llm_client
 from agent.pattern_tracker import PatternTracker, create_pattern_tracker
 
 
+def twitter_weighted_len(text: str) -> int:
+    """Twitter 가중치 글자수 (한글/한자/일본어 = 2, 나머지 = 1)"""
+    count = 0
+    for char in text:
+        if '\u1100' <= char <= '\u11FF' or '\u3130' <= char <= '\u318F' or '\uAC00' <= char <= '\uD7AF':
+            count += 2
+        elif '\u4E00' <= char <= '\u9FFF' or '\u3040' <= char <= '\u30FF':
+            count += 2
+        else:
+            count += 1
+    return count
+
+
 def contains_forbidden_chars(text: str) -> bool:
     """한자, 일본어 포함 여부 체크"""
     # CJK Unified Ideographs (한자)
@@ -220,6 +233,11 @@ class ContentGenerator:
         if len(text) > config.max_length:
             text = text[:config.max_length - 3] + "..."
 
+        weighted = twitter_weighted_len(text)
+        if weighted > 280:
+            target_chars = len(text) * 270 // weighted
+            text = text[:target_chars] + "..."
+
         return text
 
     def _validate_and_regenerate(
@@ -264,40 +282,35 @@ class ContentGenerator:
         config: ContentConfig,
         topic_context: Optional[str] = None
     ) -> str:
-        """LLM 리뷰 레이어: Pattern Tracker 연동 교정"""
+        """LLM 리뷰 레이어: Pattern Tracker 연동 + 페르소나 보존 교정"""
         violations = self.pattern_tracker.check_violations(text, topic_context)
         violation_prompt = self.pattern_tracker.format_violations_for_llm(violations)
+        persona_prompt = self.pattern_tracker.get_persona_preservation_prompt()
 
         if not self.review_enabled and not violations:
             self.pattern_tracker.record_usage(text)
             return text
 
-        patterns_info = ', '.join(self.review_patterns) if self.review_patterns else '~거든요, 음..., 아...'
+        prompt = f"""당신은 SNS 글쓰기 교정 전문가입니다.
+이 페르소나의 개성을 유지하면서 과도한 반복만 줄여야 합니다.
 
-        prompt = f"""당신은 한국어 글쓰기 교정 전문가입니다.
+{persona_prompt}
 
 ### 원문:
 {text}
 
 {violation_prompt}
 
-### 교정 지시:
-1. 위 패턴 위반 사항을 우선 교정하세요
-2. 과도하게 반복되는 말투 패턴을 교정하세요
-   - 주의 패턴: {patterns_info}
-   - 같은 패턴은 최대 {self.review_max_occurrences}회만 허용
-3. 자연스러운 일반인의 SNS 글처럼 다듬으세요
-   - 너무 연기하는 듯한 말투 → 자연스럽게
-   - 과한 감탄사/시작어 → 적절하게
-4. 원문의 핵심 의미와 개성은 유지하세요
-   - 요리 관련 비유나 표현 유지
-   - 전문성이 드러나는 부분 유지
-5. 글자 수 유지: {config.min_length}~{config.max_length}자
+### 교정 원칙:
+1. **페르소나 보존 우선**: 위 "패턴 보존 규칙"을 반드시 따르세요
+2. **위반 사항만 교정**: 패턴 위반이 있다면 그것만 고치세요
+3. **최소 개입**: 위반이 없으면 원문 그대로 출력하세요
+4. **개성 유지**: 어눌함, 망설임 등 페르소나 특성은 제거하지 마세요
 
 ### 규칙:
 - 반드시 한글만 사용 (한자, 일본어 금지)
 - 교정된 텍스트만 출력 (설명 없이)
-- 원문이 이미 자연스러우면 그대로 출력
+- 글자 수: {config.min_length}~{config.max_length}자
 
 ### 교정 결과:"""
 
@@ -311,6 +324,11 @@ class ContentGenerator:
 
         if len(reviewed) > config.max_length:
             reviewed = reviewed[:config.max_length - 3] + "..."
+
+        weighted = twitter_weighted_len(reviewed)
+        if weighted > 280:
+            target_chars = len(reviewed) * 270 // weighted
+            reviewed = reviewed[:target_chars] + "..."
 
         self.pattern_tracker.record_usage(reviewed)
         return reviewed

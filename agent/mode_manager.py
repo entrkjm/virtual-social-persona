@@ -19,44 +19,46 @@ class AgentMode(str, Enum):
 class ModeConfig:
     step_interval_min: int
     step_interval_max: int
-    like_probability: float
-    comment_probability: float
-    repost_probability: float
     warmup_steps: int
     sleep_enabled: bool
     random_breaks: bool
+    # 확률은 Optional - None이면 페르소나 값 사용
+    like_probability: Optional[float] = None
+    comment_probability: Optional[float] = None
+    repost_probability: Optional[float] = None
 
 
 MODE_CONFIGS: Dict[AgentMode, ModeConfig] = {
+    # normal: 페르소나 설정 그대로 사용 (프로덕션)
     AgentMode.NORMAL: ModeConfig(
         step_interval_min=60,
         step_interval_max=180,
-        like_probability=0.25,
-        comment_probability=0.08,
-        repost_probability=0.05,
         warmup_steps=5,
         sleep_enabled=True,
         random_breaks=True
+        # 확률 None → 페르소나 값 사용
     ),
+    # test: 중간 속도, 확률 오버라이드 (테스트)
     AgentMode.TEST: ModeConfig(
         step_interval_min=15,
         step_interval_max=45,
-        like_probability=0.40,
-        comment_probability=0.15,
-        repost_probability=0.10,
         warmup_steps=2,
         sleep_enabled=False,
-        random_breaks=False
+        random_breaks=False,
+        like_probability=0.50,
+        comment_probability=0.10,
+        repost_probability=0.15
     ),
+    # aggressive: 빠른 속도, 높은 확률 (개발)
     AgentMode.AGGRESSIVE: ModeConfig(
         step_interval_min=8,
         step_interval_max=20,
-        like_probability=0.60,
-        comment_probability=0.25,
-        repost_probability=0.15,
         warmup_steps=0,
         sleep_enabled=False,
-        random_breaks=False
+        random_breaks=False,
+        like_probability=0.70,
+        comment_probability=0.15,
+        repost_probability=0.25
     )
 }
 
@@ -80,32 +82,36 @@ class ModeManager:
     def config(self) -> ModeConfig:
         return MODE_CONFIGS[self.mode]
 
+    def should_override_probabilities(self) -> bool:
+        """확률 오버라이드 여부 (normal이면 페르소나 값 사용)"""
+        return self.mode != AgentMode.NORMAL
+
     def get_config_override(self) -> Dict[str, Any]:
         cfg = self.config
-        return {
+        result = {
             "step_interval": {
                 "min": cfg.step_interval_min,
                 "max": cfg.step_interval_max
             },
-            "like_probability": cfg.like_probability,
-            "comment_probability": cfg.comment_probability,
-            "repost_probability": cfg.repost_probability,
             "warmup_steps": cfg.warmup_steps,
             "sleep_enabled": cfg.sleep_enabled,
             "random_breaks": cfg.random_breaks
         }
+        # 확률은 오버라이드 모드일 때만 포함
+        if self.should_override_probabilities():
+            result["like_probability"] = cfg.like_probability
+            result["comment_probability"] = cfg.comment_probability
+            result["repost_probability"] = cfg.repost_probability
+        return result
 
     def apply_to_behavior(self, behavior_config: Dict) -> Dict:
-        """behavior 설정에 모드 오버라이드 적용
-
-        Args:
-            behavior_config: 기존 behavior 설정 dict
-
-        Returns:
-            모드가 적용된 behavior 설정
-        """
+        """behavior 설정에 모드 오버라이드 적용 (test/aggressive만)"""
         cfg = self.config
         result = dict(behavior_config) if behavior_config else {}
+
+        # normal 모드면 확률 오버라이드 안 함
+        if not self.should_override_probabilities():
+            return result
 
         if "interaction_patterns" not in result:
             result["interaction_patterns"] = {}

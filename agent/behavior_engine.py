@@ -70,10 +70,8 @@ class HumanLikeController:
         self.state.step_count += 1
 
     def is_in_warmup(self) -> bool:
-        warmup = self._get_warmup_config()
-        if not warmup.get('enabled', True):
-            return False
-        return self.state.step_count < warmup.get('steps', 5)
+        warmup_steps = mode_manager.config.warmup_steps
+        return self.state.step_count < warmup_steps
 
     def is_paused_for_error(self) -> Tuple[bool, Optional[str]]:
         now = datetime.now()
@@ -218,11 +216,10 @@ class BehaviorEngine:
                     'max_comments_per_post': 2,
                     'regret_probability': settings.PROB_REGRET
                 },
-                'action_variety': {
-                    'lurk_probability': settings.PROB_LURK,
-                    'like_only_probability': settings.PROB_LIKE_ONLY,
-                    'comment_probability': settings.PROB_COMMENT,
-                    'like_and_comment_probability': settings.PROB_LIKE_AND_COMMENT
+                'independent_actions': {
+                    'like_probability': 0.30,
+                    'repost_probability': 0.10,
+                    'comment_probability': 0.05
                 }
             }
         }
@@ -388,7 +385,13 @@ class BehaviorEngine:
         sentiment = context.get('perception', {}).get('sentiment', 'neutral')
         relationship = context.get('relationship', '')
 
-        base_prob = 0.5
+        from agent.mode_manager import AgentMode
+        if mode_manager.mode == AgentMode.AGGRESSIVE:
+            base_prob = 0.95
+        elif mode_manager.mode == AgentMode.TEST:
+            base_prob = 0.75
+        else:
+            base_prob = 0.5
 
         # 1. 같은 유저 체크
         same_user_config = self.config.get('interaction_patterns', {}).get('same_user', {})
@@ -455,24 +458,24 @@ class BehaviorEngine:
         return "LURK"
 
     def decide_actions(self) -> Dict[str, bool]:
-        """각 행동을 독립 확률로 판단 (mode_manager 오버라이드 적용)
+        """각 행동을 독립 확률로 판단
+
+        - normal 모드: 페르소나 behavior.yaml 값 사용
+        - test/aggressive 모드: mode_manager 오버라이드 값 사용
 
         Returns:
             {'like': bool, 'repost': bool, 'comment': bool}
         """
-        mode_cfg = mode_manager.config
-        action_config = self.config.get('interaction_patterns', {}).get(
-            'independent_actions', {}
-        )
-
-        like_prob = mode_cfg.like_probability
-        repost_prob = mode_cfg.repost_probability
-        comment_prob = mode_cfg.comment_probability
-
-        if action_config:
-            like_prob = action_config.get('like_probability', like_prob)
-            repost_prob = action_config.get('repost_probability', repost_prob)
-            comment_prob = action_config.get('comment_probability', comment_prob)
+        if mode_manager.should_override_probabilities():
+            mode_cfg = mode_manager.config
+            like_prob = mode_cfg.like_probability
+            repost_prob = mode_cfg.repost_probability
+            comment_prob = mode_cfg.comment_probability
+        else:
+            action_config = self.config.get('interaction_patterns', {}).get('independent_actions', {})
+            like_prob = action_config.get('like_probability', 0.30)
+            repost_prob = action_config.get('repost_probability', 0.10)
+            comment_prob = action_config.get('comment_probability', 0.05)
 
         return {
             'like': random.random() < like_prob,

@@ -13,13 +13,18 @@ class AgentMemory:
         self.memory = self._load()
 
     def _load(self):
+        default = {"interactions": [], "facts": {}, "likes": [], "curiosity": {}, "archive": [], "responded_mentions": []}
         if os.path.exists(self.storage_path):
             try:
                 with open(self.storage_path, "r", encoding="utf-8") as f:
-                    return json.load(f)
+                    data = json.load(f)
+                for key in default:
+                    if key not in data:
+                        data[key] = default[key]
+                return data
             except:
-                return {"interactions": [], "facts": {}, "likes": [], "curiosity": {}, "archive": []}
-        return {"interactions": [], "facts": {}, "likes": [], "curiosity": {}, "archive": []}
+                return default
+        return default
 
     def _save(self):
         with open(self.storage_path, "w", encoding="utf-8") as f:

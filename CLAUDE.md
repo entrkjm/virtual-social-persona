@@ -88,10 +88,10 @@ interaction_patterns:
   same_post:
     max_comments_per_post: 2
     regret_probability: 0.30
-  independent_actions:    # 독립 확률 (mode_manager 오버라이드 가능)
-    like_probability: 0.60
-    repost_probability: 0.15
-    comment_probability: 0.12
+  independent_actions:    # normal 모드에서 사용 (test/aggressive는 오버라이드)
+    like_probability: 0.40
+    repost_probability: 0.10
+    comment_probability: 0.08
 
 # Human-like 행동
 human_like:
@@ -221,16 +221,27 @@ speech_style:   # 콘텐츠 생성 스타일 분리
 
 `agent/mode_manager.py` + 환경변수 `AGENT_MODE`
 
-| Mode | 간격 | Like | Comment | Repost | 워밍업 | 수면 | 휴식 | 용도 |
-|------|------|------|---------|--------|--------|------|------|------|
-| **normal** | 60-180s | 25% | 8% | 5% | 5스텝 | O | O | 기본 운영 |
-| **test** | 15-45s | 40% | 15% | 10% | 2스텝 | X | X | 테스트 |
-| **aggressive** | 8-20s | 60% | 25% | 15% | 0스텝 | X | X | 빠른 성장 (주의!) |
+| Mode | 간격 | 확률 | 워밍업 | 수면 | 휴식 | 용도 |
+|------|------|------|--------|------|------|------|
+| **normal** | 60-180s | **페르소나 값** | 5스텝 | O | O | 프로덕션 |
+| **test** | 15-45s | 50/15/10% | 2스텝 | X | X | 테스트 |
+| **aggressive** | 8-20s | 70/25/15% | 0스텝 | X | X | 개발 (주의!) |
 
 ### 동작
-- `behavior.yaml`의 `independent_actions` 확률을 오버라이드
+- **normal**: 페르소나 `behavior.yaml`의 `independent_actions` 값 그대로 사용 (프로덕션용)
+- **test/aggressive**: 모드별 고정 확률로 오버라이드 (개발용)
 - 226 에러 발생 시 aggressive → normal 자동 전환
 - 연속 3회 에러 시 normal로 전환 + 5분 정지
+
+### 페르소나 이식성
+```
+normal 모드 = 페르소나 100% 존중
+├── 확률: behavior.yaml의 independent_actions
+├── 성격: personality_traits
+└── 스타일: persona.yaml의 speech_style
+
+→ 페르소나 폴더 복사 + active_persona.yaml 변경 = 완전 교체
+```
 
 ### 사용 예시
 ```bash
@@ -293,12 +304,13 @@ i = 0  # 재시도 횟수
 ### 2가지 생성 모드
 | Mode | 용도 | 길이 | 톤 | 예시 시작어 | 예시 끝말 |
 |------|------|------|-----|------------|---------|
-| **chat** | 답글/대화 | 20-150자 | 친근하고 도움주는 | 음..., 아... | ~요, ~거든요 |
-| **post** | 독립 포스팅 | 30-280자 | 짧고 임팩트 | 갑자기 생각났는데 | ~임, ... |
+| **chat** | 답글/대화 | 15-100자 | 친근하고 도움주는 | 음..., 아... | ~요, ~거든요 |
+| **post** | 독립 포스팅 | 20-120자 | 짧고 임팩트 | 갑자기 생각났는데 | ~임, ... |
 
 ### 검증 레이어
 1. **금지 문자 검증**: 한자/일본어 포함 시 재생성 (최대 3회)
-2. **LLM 리뷰 레이어**: Pattern Tracker 연동
+2. **Twitter 글자수 검증**: 한글 가중치 적용 (한글 1자 = 2 가중치, 280 제한)
+3. **LLM 리뷰 레이어**: Pattern Tracker 연동
    - 과도한 말투 패턴 교정 (`~거든요` 연속 사용 등)
    - 패턴 위반 사항 자동 교정
    - 자연스러운 일반인 글 스타일로 다듬기

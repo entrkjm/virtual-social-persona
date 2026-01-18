@@ -110,7 +110,7 @@ def run_with_sdk():
                     time.sleep(min(sleep_seconds, 3600))
                     continue
 
-                if activity_scheduler.should_take_break():
+                if mode_manager.should_take_break() and activity_scheduler.should_take_break():
                     break_until = activity_scheduler._break_until
                     break_duration = activity_scheduler.get_seconds_until_active()
                     print(f"[BREAK] Taking a break for {break_duration//60}m")
@@ -184,7 +184,7 @@ def run_standalone():
                     time.sleep(min(sleep_seconds, 3600))
                     continue
 
-                if activity_scheduler.should_take_break():
+                if mode_manager.should_take_break() and activity_scheduler.should_take_break():
                     break_duration = activity_scheduler.get_seconds_until_active()
                     print(f"[BREAK] Taking a break for {break_duration//60}m")
                     time.sleep(break_duration)

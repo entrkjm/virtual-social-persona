@@ -104,8 +104,25 @@ async def _search_tweets_twikit(query: str, count: int = 5):
     return await _with_retry(_do)
 
 
+def _twitter_weighted_len(text: str) -> int:
+    """Twitter 가중치 글자수 (한글/한자/일본어 = 2, 나머지 = 1)"""
+    count = 0
+    for char in text:
+        if '\u1100' <= char <= '\u11FF' or '\u3130' <= char <= '\u318F' or '\uAC00' <= char <= '\uD7AF':
+            count += 2
+        elif '\u4E00' <= char <= '\u9FFF' or '\u3040' <= char <= '\u30FF':
+            count += 2
+        else:
+            count += 1
+    return count
+
 def post_tweet(content: str, reply_to: str = None) -> str:
     """트윗 게시 / Post tweet"""
+    weighted_len = _twitter_weighted_len(content)
+    if weighted_len > 280:
+        target_chars = len(content) * 280 // weighted_len - 3
+        print(f"[TWEET] 가중치 글자수 초과 ({weighted_len}), {target_chars}자로 자름")
+        content = content[:target_chars] + "..."
     try:
         tweet_id = asyncio.run(_post_tweet_twikit(content, reply_to))
         print(f"[TWEET] posted {tweet_id}")
@@ -113,7 +130,7 @@ def post_tweet(content: str, reply_to: str = None) -> str:
     except Exception as e:
         print(f"[TWEET] failed: {e}")
         _log_to_file("Twitter (Failed)", content)
-        return f"Failed: {e}"
+        raise
 
 
 def search_tweets(query: str, count: int = 5):

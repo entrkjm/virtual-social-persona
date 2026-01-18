@@ -1,18 +1,7 @@
 import os
-import yaml
 from dotenv import load_dotenv
 
 load_dotenv()
-
-def _load_behavior_config():
-    """behavior.yaml 로드"""
-    config_path = os.path.join(os.path.dirname(__file__), "behavior.yaml")
-    if os.path.exists(config_path):
-        with open(config_path, 'r', encoding='utf-8') as f:
-            return yaml.safe_load(f)
-    return {}
-
-_behavior = _load_behavior_config()
 
 class Settings:
     # ===========================================
@@ -54,26 +43,14 @@ class Settings:
     CHROMA_PATH = os.getenv("CHROMA_PATH", os.path.join(DATA_DIR, "chroma"))
 
     # ===========================================
-    # 행동 설정 (behavior.yaml에서 로드)
+    # 포스팅/시스템 설정 (하드코딩, 추후 페르소나 이관 가능)
     # ===========================================
-    _step = _behavior.get('step_interval', {})
-    STEP_INTERVAL_MIN = _step.get('min', 30)
-    STEP_INTERVAL_MAX = _step.get('max', 300)
-
-    _action = _behavior.get('action_probability', {})
-    PROB_LURK = _action.get('lurk', 0.40)
-    PROB_LIKE_ONLY = _action.get('like_only', 0.30)
-    PROB_COMMENT = _action.get('comment', 0.25)
-    PROB_LIKE_AND_COMMENT = _action.get('like_and_comment', 0.05)
-    PROB_REGRET = _action.get('regret', 0.30)
-
-    _posting = _behavior.get('posting_trigger', {})
-    PROB_FLASH = _posting.get('flash', 0.70)
-    PROB_FLASH_REINFORCED = _posting.get('flash_reinforced', 0.80)
-    PROB_MOOD_BURST = _posting.get('mood_burst', 0.30)
-    PROB_RANDOM_RECALL = _posting.get('random_recall', 0.05)
-
-    POST_MIN_INTERVAL = _behavior.get('post_min_interval', 60)
-    CONSOLIDATION_INTERVAL = _behavior.get('consolidation_interval', 1)
+    PROB_REGRET = 0.30
+    PROB_FLASH = 0.70
+    PROB_FLASH_REINFORCED = 0.80
+    PROB_MOOD_BURST = 0.30
+    PROB_RANDOM_RECALL = 0.05
+    POST_MIN_INTERVAL = 60
+    CONSOLIDATION_INTERVAL = 1
 
 settings = Settings()
