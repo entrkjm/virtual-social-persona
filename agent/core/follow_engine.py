@@ -118,7 +118,8 @@ class FollowEngine:
 
         # 팔로워 비율 체크
         follower_ratio_min = exclude.get('follower_ratio_below', 0.1)
-        following = user.get('following_count', user.get('friends_count', 1))
+        followers = user.followers_count
+        following = user.following_count
         if following > 0:
             ratio = followers / following
             if ratio < follower_ratio_min:
@@ -126,7 +127,7 @@ class FollowEngine:
 
         # 계정 나이 체크
         min_age_days = exclude.get('account_age_days_below', 30)
-        created_at = user.get('created_at')
+        created_at = user.created_at
         if created_at:
             try:
                 if isinstance(created_at, str):
@@ -146,18 +147,18 @@ class FollowEngine:
 
         return True, "eligible"
 
-    def _calculate_score(self, user: Dict, context: Dict) -> float:
+    def _calculate_score(self, user: SocialUser, context: Dict) -> float:
         """팔로우 점수 계산 (0-100)"""
         score = 50.0
         priority = self.config.get('priority', {})
 
         # 맞팔 여부
-        if priority.get('follows_me', True) and user.get('following_me', False):
+        if priority.get('follows_me', True) and user.following_me:
             score += 30
 
         # 바이오 키워드 매칭
         bio_keywords = priority.get('bio_keywords', [])
-        bio = user.get('bio', user.get('description', '')).lower()
+        bio = (user.bio or '').lower()
         for keyword in bio_keywords:
             if keyword.lower() in bio:
                 score += 10
@@ -168,21 +169,21 @@ class FollowEngine:
             score += min(interaction_count * 5, 20)
 
         # 팔로워 수 (적당히 있으면 +)
-        followers = user.get('followers_count', 0)
+        followers = user.followers_count
         if 100 <= followers <= 10000:
             score += 10
         elif followers > 10000:
             score += 5
 
         # 계정 품질 (프로필 완성도)
-        if user.get('profile_image') and 'default' not in str(user.get('profile_image', '')).lower():
+        if user.profile_image_url and 'default' not in user.profile_image_url.lower():
             score += 5
-        if user.get('bio', user.get('description', '')):
+        if user.bio:
             score += 5
 
         return min(100, max(0, score))
 
-    def should_follow(self, user: Dict, interaction_context: Dict = None) -> FollowDecision:
+    def should_follow(self, user: SocialUser, interaction_context: Dict = None) -> FollowDecision:
         """팔로우 여부 결정"""
         if interaction_context is None:
             interaction_context = {}
