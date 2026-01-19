@@ -1,34 +1,42 @@
-# Twitter Studio (Image Gen & Critique) Configuration
-
-# Image Generation Guidelines (Photorealism)
+# Image Generation Guidelines (Photorealism - Smartphone Style)
 prompt_guide:
-  structure_formula: "[촬영 상황] -> [메인 메뉴] -> [앵글 및 배경] -> [조명 및 질감] -> [마이너스 요소]"
+  # 중요: 모든 프롬프트는 "스마트폰으로 찍은 캐주얼 스냅샷" 스타일이어야 함
+  style_prefix: "Candid smartphone photo, iPhone 15 Pro shot, unedited, raw photo, no filters, casual snapshot"
+  
+  structure_formula: "[스마트폰 촬영 스타일] -> [메인 메뉴] -> [자연스러운 앵글] -> [실제 조명] -> [불완전한 요소]"
   
   keywords:
+    camera_style:
+      smartphone: "iPhone photo, Samsung Galaxy shot, casual mobile snapshot, unprocessed"
+      amateur: "amateur photographer, everyday photo, non-professional, home cook"
+      raw: "no editing, no filters, no post-processing, straight from camera"
+    
     dynamic_state:
-      hot: "subtle wisps of steam, bubbling surface, glistening oil sheen"
-      cold: "condensation droplets, chilled dew, crisp edges, vibrant natural colors"
-      fried: "charred edges, irregular golden-brown crust, natural oil shine"
-      bakery: "scattered crumbs, flour dusting, soft matte finish, melting texture"
-      noodle: "glossy sauce coating, tangled texture, slight steam"
+      hot: "subtle wisps of steam, bubbling surface, glistening oil sheen, slightly overcooked edges"
+      cold: "condensation droplets, chilled dew, slightly melted, imperfect frost"
+      fried: "uneven charred edges, irregular golden-brown crust, natural oil drips"
+      bakery: "scattered crumbs, flour dusting, burnt spots, messy texture"
+      noodle: "glossy sauce coating, tangled messy texture, sauce stains on bowl edge"
     
     angles:
-      eye_level: "45-degree angle, shallow depth of field, blurred background"
-      overhead: "looking directly down, flat lay, sharp focus across the entire frame"
-      macro: "extreme close-up, 100mm macro lens, texture detail"
-      candid: "slightly off-center composition, handheld feel"
+      eye_level: "45-degree angle, shallow depth of field, slightly blurred background"
+      overhead: "looking directly down, flat lay, phone camera perspective"
+      candid: "slightly off-center, tilted frame, handheld shake, imperfect composition"
+      quick_snap: "motion blur, not perfectly focused, rushed shot feel"
     
     lighting:
-      natural: "soft side lighting from a window, natural window light"
-      ambient: "warm overhead dining light, evening ambient light"
-      harsh: "harsh natural sunlight, strong shadows"
+      natural: "soft side lighting from a window, natural daylight, no flash"
+      ambient: "warm overhead dining light, evening indoor light, yellow tungsten"
+      harsh: "harsh natural sunlight, strong shadows, lens flare"
+      dim: "low light, slightly grainy, underexposed"
     
     imperfections:
-      props: "mismatched plates, dirty spoons, crumpled napkins"
-      traces: "sauce splatters on the table, messy crumbs, half-eaten bowl"
-      texture: "smartphone camera quality, subtle film grain, unfiltered, no post-processing"
+      props: "mismatched plates, worn chopsticks, dirty spoons, crumpled napkins, scratched table"
+      traces: "sauce splatters, messy crumbs, half-eaten bowl, fingerprints on glass"
+      quality: "smartphone camera quality, visible grain, not pin-sharp, slight motion blur"
+      environment: "cluttered background, messy kitchen, everyday home setting"
       
-  negative_prompts: "8k, highly detailed, professional food photography, cinematic lighting, masterpiece, perfectly plated, studio lighting, plastic looking, 3d render"
+  negative_prompts: "8k, 4k, highly detailed, professional food photography, cinematic lighting, masterpiece, perfectly plated, studio lighting, plastic looking, 3d render, illustration, cartoon, anime, CGI, digital art, stock photo, commercial, advertising, magazine cover, award winning, michelin star presentation"
 
 # Image Critic Settings
 critic:

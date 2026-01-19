@@ -4,6 +4,7 @@ Platform Adapter Base & Twitter Adapter
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any
 import time
+import random
 from platforms.twitter.social import post_tweet
 
 class PlatformAdapter(ABC):
@@ -19,7 +20,12 @@ class PlatformAdapter(ABC):
 class TwitterAdapter(PlatformAdapter):
     MAX_LENGTH = 200  # Reduced further for safety
     MAX_THREAD_LENGTH = 3  # 최대 3개 트윗으로 제한
-    TWEET_DELAY = 15  # 트윗 사이 15초 딜레이
+    TWEET_DELAY_BASE = 20  # 기본 딜레이 20초
+    TWEET_DELAY_RANDOM = 10  # 랜덤 추가 0~10초
+    
+    def _get_random_delay(self) -> int:
+        """랜덤 딜레이 계산: 20 + random(0-10)"""
+        return self.TWEET_DELAY_BASE + random.randint(0, self.TWEET_DELAY_RANDOM)
     
     def publish(self, content: str, images: List[str], config: Dict) -> Dict:
         format_type = config.get('format', 'single')
@@ -54,10 +60,11 @@ class TwitterAdapter(PlatformAdapter):
                 
                 reply_to = tweet_id
                 
-                # 봇 감지 방지용 딜레이 (마지막 트윗 제외)
+                # 봇 감지 방지용 랜덤 딜레이 (마지막 트윗 제외)
                 if i < len(chunks) - 1:
-                    print(f"[TwitterAdapter] Waiting {self.TWEET_DELAY}s before next tweet...")
-                    time.sleep(self.TWEET_DELAY)
+                    delay = self._get_random_delay()
+                    print(f"[TwitterAdapter] Waiting {delay}s before next tweet...")
+                    time.sleep(delay)
                     
             except Exception as e:
                 print(f"[TwitterAdapter] Failed to publish tweet {i+1}/{len(chunks)}: {e}")
@@ -68,49 +75,99 @@ class TwitterAdapter(PlatformAdapter):
 
     def _split_content(self, content: str) -> List[str]:
         """
-        긴 글을 트윗 길이로 분할
-        첫 번째 청크는 항상 이미지와 함께 게시되므로 내용이 있어야 함
+        콘텐츠를 HOOK + DETAIL 구조로 분할
+        
+        Expected format from LLM:
+        ===HOOK===
+        짧은 훅 텍스트 (이미지와 함께)
+        ===DETAIL===
+        상세 설명 (댓글로)
         """
         if not content or not content.strip():
             return []
-            
-        # 줄바꿈 기준으로 나누고 결합
-        paragraphs = content.split('\n')
-        chunks = []
-        current_chunk = ""
         
-        for p in paragraphs:
-            p = p.strip()
-            if not p:
-                continue
-                
-            # 현재 청크에 추가할 수 있는지 확인
-            potential = current_chunk + ("\n" if current_chunk else "") + p
+        # HOOK/DETAIL 구분자로 파싱 시도
+        hook_marker = "===HOOK==="
+        detail_marker = "===DETAIL==="
+        
+        hook = ""
+        detail = ""
+        
+        if hook_marker in content and detail_marker in content:
+            # 구조화된 형식 파싱
+            parts = content.split(detail_marker)
+            hook_part = parts[0].replace(hook_marker, "").strip()
+            detail_part = parts[1].strip() if len(parts) > 1 else ""
             
-            if len(potential) < self.MAX_LENGTH:
-                current_chunk = potential
+            hook = hook_part
+            detail = detail_part
+            
+            print(f"[TwitterAdapter] Parsed structured content: HOOK={len(hook)}chars, DETAIL={len(detail)}chars")
+        else:
+            # 폴백: 기존 로직 (문단 기반 분할)
+            print("[TwitterAdapter] No HOOK/DETAIL markers found, using fallback split")
+            paragraphs = content.split('\n')
+            chunks = []
+            current = ""
+            
+            for p in paragraphs:
+                p = p.strip()
+                if not p:
+                    continue
+                potential = current + ("\n" if current else "") + p
+                if len(potential) < self.MAX_LENGTH:
+                    current = potential
+                else:
+                    if current:
+                        chunks.append(current)
+                    current = p
+            if current:
+                chunks.append(current)
+            
+            if len(chunks) > self.MAX_THREAD_LENGTH:
+                chunks = chunks[:self.MAX_THREAD_LENGTH]
+            
+            print(f"[TwitterAdapter] Fallback split into {len(chunks)} chunks")
+            return chunks
+        
+        # HOOK/DETAIL이 있으면 정확히 2개로 반환
+        result = []
+        
+        # HOOK은 무조건 첫 번째 (이미지와 함께)
+        if hook:
+            # HOOK이 너무 길면 자르기
+            if len(hook) > self.MAX_LENGTH:
+                hook = hook[:self.MAX_LENGTH - 3] + "..."
+            result.append(hook)
+        
+        # DETAIL은 두 번째 (댓글로)
+        if detail:
+            # DETAIL이 너무 길면 잘라서 여러 청크로
+            if len(detail) > self.MAX_LENGTH:
+                # 문장 단위로 분할
+                sentences = detail.replace('... ', '...\n').replace('. ', '.\n').split('\n')
+                current = ""
+                for s in sentences:
+                    s = s.strip()
+                    if not s:
+                        continue
+                    potential = current + (" " if current else "") + s
+                    if len(potential) < self.MAX_LENGTH:
+                        current = potential
+                    else:
+                        if current:
+                            result.append(current)
+                        current = s
+                if current:
+                    result.append(current)
             else:
-                # 현재 청크가 있으면 저장하고 새로 시작
-                if current_chunk:
-                    chunks.append(current_chunk)
-                current_chunk = p
-                
-        # 마지막 청크 추가
-        if current_chunk:
-            chunks.append(current_chunk)
+                result.append(detail)
         
-        # 첫 번째 청크가 너무 짧으면 다음과 병합 시도
-        if len(chunks) > 1 and len(chunks[0]) < 50:
-            merged = chunks[0] + "\n" + chunks[1]
-            if len(merged) < self.MAX_LENGTH:
-                chunks = [merged] + chunks[2:]
-            
-        # 최대 스레드 길이 제한
-        if len(chunks) > self.MAX_THREAD_LENGTH:
-            print(f"[TwitterAdapter] Truncating {len(chunks)} tweets to {self.MAX_THREAD_LENGTH}")
-            chunks = chunks[:self.MAX_THREAD_LENGTH]
+        # 최대 길이 제한
+        if len(result) > self.MAX_THREAD_LENGTH:
+            print(f"[TwitterAdapter] Truncating {len(result)} to {self.MAX_THREAD_LENGTH}")
+            result = result[:self.MAX_THREAD_LENGTH]
         
-        print(f"[TwitterAdapter] Split into {len(chunks)} chunks: {[len(c) for c in chunks]}")
-            
-        return chunks
+        print(f"[TwitterAdapter] Final chunks: {[len(c) for c in result]}")
+        return result
 
