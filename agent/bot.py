@@ -189,24 +189,32 @@ class SocialAgent:
 
     def get_state_fn(self, function_result: FunctionResult, current_state: dict) -> dict:
         """현재 상태 + 3-Layer 시스템 프롬프트 생성"""
+        print("[DEBUG] get_state_fn: Checking consolidator...", flush=True)
         if self.memory_consolidator.should_run(interval_hours=settings.CONSOLIDATION_INTERVAL):
+            print("[DEBUG] get_state_fn: Running consolidator...", flush=True)
             stats = self.memory_consolidator.run()
             print(f"[MEMORY] +{stats.promoted} promoted, -{stats.deleted} deleted")
 
+        print("[DEBUG] get_state_fn: Getting memory context...", flush=True)
         memory_context = agent_memory.get_recent_context()
+        print("[DEBUG] get_state_fn: Getting facts context...", flush=True)
         facts_context = agent_memory.get_facts_context()
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         mood = self._get_current_mood()
 
+        print("[DEBUG] get_state_fn: Getting top interests...", flush=True)
         top_interests = agent_memory.get_top_interests(limit=10)
         interests_text = ", ".join(top_interests) if top_interests else "없음"
 
         # Trends removed
         daily_briefing = "트렌드 정보 없음 (Decoupled)"
 
+        print("[DEBUG] get_state_fn: Getting core memories...", flush=True)
         core_memories = self.memory_db.get_all_core_memories()
         core_context = self.tier_manager.get_core_context_for_llm(core_memories)
+        print("[DEBUG] get_state_fn: Getting recent posts...", flush=True)
         recent_posts_context = self.memory_db.get_recent_posts_context(limit=5)
+        print("[DEBUG] get_state_fn: Contexts loaded.", flush=True)
 
         self.full_system_prompt = f"""
 {self.persona.system_prompt}
@@ -244,13 +252,20 @@ class SocialAgent:
     def post_tweet_executable(self, content: str) -> Tuple[FunctionResultStatus, str, Dict[str, Any]]:
         try:
             # 1. 시그니처 시리즈 체크 (content가 없을 때만)
+            print(f"[POST] post_tweet_executable called (content={bool(content)})", flush=True)
             if not content:
                 # 트위터 플랫폼 확인
-                if 'twitter' in self.series_engine.get_enabled_platforms():
+                enabled_platforms = self.series_engine.get_enabled_platforms()
+                print(f"[POST] Series enabled platforms: {enabled_platforms}", flush=True)
+                if 'twitter' in enabled_platforms:
                     # 시리즈 실행 시도 (랜덤 선택 + 쿨다운 체크)
+                    print("[POST] Attempting Series execution...", flush=True)
                     result = self.series_engine.execute('twitter')
+                    print(f"[POST] Series result: {result}", flush=True)
                     if result:
                         return FunctionResultStatus.DONE, f"Posted Series: {result}", result
+                    else:
+                        print("[POST] Series returned None, falling back to Casual Post", flush=True)
 
             # 2. 일반 포스트 (Casual Post)
             # 토픽 선택 (content가 비어있으면 자동 선택)
@@ -393,10 +408,15 @@ class SocialAgent:
 
                 reply_content = None
                 if actions.get('comment') or actions.get('reply'):
+                    # 최근 답글 조회 (다양성 확보용)
+                    recent_episodes = agent_memory.get_recent_episodes(limit=10)
+                    recent_replies = [e.content for e in recent_episodes if e.type == 'replied']
+
                     # 답글 생성
                     reply_content = self.reply_generator.generate(
                         target_tweet=tweet,
                         perception=perception,
+                        recent_replies=recent_replies,
                         context={
                             'system_prompt': self.full_system_prompt,
                             'mood': self._get_current_mood(),

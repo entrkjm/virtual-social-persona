@@ -82,6 +82,27 @@ class VectorStore:
         # 컬렉션 초기화
         self._init_collections()
 
+    def _with_timeout(self, func, *args, timeout_seconds=5, **kwargs):
+        """실행 시간 제한 래퍼"""
+        import concurrent.futures
+        
+        # Don't use 'with' - it waits for shutdown
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        try:
+            future = executor.submit(func, *args, **kwargs)
+            try:
+                # print(f"Wait for {timeout_seconds}s...")
+                return future.result(timeout=timeout_seconds)
+            except concurrent.futures.TimeoutError:
+                print(f"[VECTOR] Operation timed out ({timeout_seconds}s)", flush=True)
+                return None
+            except Exception as e:
+                print(f"[VECTOR] Operation failed: {e}")
+                return None
+        finally:
+            # wait=False means don't wait for pending futures to complete
+            executor.shutdown(wait=False, cancel_futures=False)
+
     def _ensure_data_dir(self):
         """데이터 디렉토리 생성 / Ensure data directory exists"""
         os.makedirs(self.persist_directory, exist_ok=True)
@@ -163,12 +184,51 @@ class VectorStore:
         except Exception as e:
             print(f"[VECTOR] Failed to update inspiration: {e}")
 
+    def update_inspirations_batch(self, ids: List[str], metadatas: List[Dict[str, Any]]):
+        """영감 메타데이터 일괄 업데이트 (Batch Update)"""
+        if not ids:
+            return
+        
+        try:
+            # Sanitize all metadata
+            sanitized_metadatas = [self._sanitize_metadata(m) for m in metadatas]
+            
+            # Wrap update call
+            def _do_update():
+                self.inspirations.update(
+                    ids=ids,
+                    metadatas=sanitized_metadatas
+                )
+            
+            self._with_timeout(_do_update, timeout_seconds=5)
+            # print(f"[VECTOR] Batch updated {len(ids)} inspirations")
+        except Exception as e:
+            print(f"[VECTOR] Failed to batch update inspirations: {e}")
+
     def delete_inspiration(self, id: str):
         """영감 삭제"""
         try:
-            self.inspirations.delete(ids=[id])
+            # Wrap delete call
+            def _do_delete():
+                self.inspirations.delete(ids=[id])
+            self._with_timeout(_do_delete, timeout_seconds=5)
         except Exception as e:
             print(f"[VECTOR] Failed to delete inspiration: {e}")
+
+    def delete_inspirations_batch(self, ids: List[str]):
+        """영감 일괄 삭제 (Batch Delete)"""
+        if not ids:
+            return
+            
+        try:
+            # Wrap batch delete
+            def _do_batch_delete():
+                self.inspirations.delete(ids=ids)
+            
+            self._with_timeout(_do_batch_delete, timeout_seconds=5)
+            print(f"[VECTOR] Batch deleted {len(ids)} inspirations")
+        except Exception as e:
+            print(f"[VECTOR] Failed to batch delete inspirations: {e}")
 
     def search_similar_inspirations(
         self,

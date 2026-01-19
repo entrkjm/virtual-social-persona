@@ -24,11 +24,8 @@ class TwitterAdapter(PlatformAdapter):
     def publish(self, content: str, images: List[str], config: Dict) -> Dict:
         format_type = config.get('format', 'single')
         
-        # 1. 콘텐츠 분할 (스레드) - 최대 길이 제한
+        # 1. 콘텐츠 분할 (스레드) - 최대 길이 제한 (split_content 내부에서 처리됨)
         chunks = self._split_content(content)
-        if len(chunks) > self.MAX_THREAD_LENGTH:
-            print(f"[TwitterAdapter] Truncating {len(chunks)} tweets to {self.MAX_THREAD_LENGTH}")
-            chunks = chunks[:self.MAX_THREAD_LENGTH]
         
         print(f"[TwitterAdapter] Publishing {len(chunks)} tweets (images={len(images)})...")
         
@@ -82,5 +79,10 @@ class TwitterAdapter(PlatformAdapter):
                 
         if current_chunk:
             chunks.append(current_chunk)
+            
+        # Truncate to max thread length
+        if len(chunks) > self.MAX_THREAD_LENGTH:
+            print(f"[TwitterAdapter] Truncating {len(chunks)} tweets to {self.MAX_THREAD_LENGTH}")
+            chunks = chunks[:self.MAX_THREAD_LENGTH]
             
         return chunks

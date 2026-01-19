@@ -167,21 +167,23 @@ def run_with_sdk():
 
 def run_standalone():
     """Standalone 모드: SDK 없이 직접 루프"""
-    persona = active_persona
-    activity_scheduler = ActivityScheduler(persona.behavior)
-    step_min, step_max = mode_manager.get_step_interval()
-    print(f"[INIT] {persona.name} (Standalone Mode)")
-    print(f"[INIT] Mode: {mode_manager.mode.value} (interval: {step_min}-{step_max}s)")
-    print(f"[INIT] Activity schedule loaded")
-
-    from agent.memory import agent_memory
-    from core.llm import llm_client
-
-    social_agent.get_state_fn(function_result=None, current_state={})
-
-    print("[RUN] Starting standalone loop")
-
     try:
+        persona = active_persona
+        activity_scheduler = ActivityScheduler(persona.behavior)
+        step_min, step_max = mode_manager.get_step_interval()
+        print(f"[INIT] {persona.name} (Standalone Mode)")
+        print(f"[INIT] Mode: {mode_manager.mode.value} (interval: {step_min}-{step_max}s)")
+        print(f"[INIT] Activity schedule loaded")
+
+        from agent.memory import agent_memory
+        from core.llm import llm_client
+
+        # 여기가 Blocking 포인트일 수 있음 (초기화 시 네트워크 호출 등)
+        print("[INIT] Loading Agent State...")
+        social_agent.get_state_fn(function_result=None, current_state={})
+
+        print("[RUN] Starting standalone loop")
+
         step_count = 0
         while True:
             try:
@@ -248,8 +250,14 @@ def run_standalone():
 
             except Exception as e:
                 error_code = None
-                if "226" in str(e):
+                if "429" in str(e):
+                    error_code = 429
+                    time.sleep(60)
+                elif "226" in str(e):
+                    # 226/401 등 치명적 에러는 더 길게 쉬어야 함
                     error_code = 226
+                elif "401" in str(e):
+                    error_code = 226 # Treat as blocking error
 
                 should_pause = mode_manager.on_error(error_code)
                 if should_pause:
@@ -260,7 +268,9 @@ def run_standalone():
                     time.sleep(10)
 
     except KeyboardInterrupt:
-        print("\nShutdown")
+        print("\n[STOP] Shutdown via KeyboardInterrupt")
+    except Exception as e:
+        print(f"\n[FATAL] Crash during initialization: {e}")
 
 
 def main():

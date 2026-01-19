@@ -43,14 +43,25 @@ class SeriesEngine:
         series = next((s for s in series_list if s['id'] == series_id), None)
         
         if not series:
+            print(f"[SERIES] is_due({series_id}): No series config found", flush=True)
             return False
-            
-        freq_str = series.get('frequency', '1d')
+        
+        # TEST/AGGRESSIVE 모드에서는 1시간 주기로 변경
+        import os
+        agent_mode = os.getenv("AGENT_MODE", "normal").lower()
+        if agent_mode in ("test", "aggressive"):
+            freq_str = "1h"
+            print(f"[SERIES] is_due({series_id}): Mode={agent_mode}, using freq=1h", flush=True)
+        else:
+            freq_str = series.get('frequency', '1d')
         
         last_str = self.planner.get_last_used_at(platform, series)
         last_used = datetime.fromisoformat(last_str) if last_str else None
         
+        print(f"[SERIES] is_due({series_id}): freq={freq_str}, last_used={last_str}", flush=True)
+        
         if not last_used:
+            print(f"[SERIES] is_due({series_id}): Never used -> Due!", flush=True)
             return True 
             
         hours = 24
@@ -68,27 +79,37 @@ class SeriesEngine:
         min_due = next_due - timedelta(hours=var_hours)
         
         now = datetime.now()
-        if now >= min_due:
+        is_ready = now >= min_due
+        print(f"[SERIES] is_due({series_id}): next_due={next_due}, now={now}, is_ready={is_ready}", flush=True)
+        if is_ready:
             return True
         return False
 
     def execute(self, platform: str) -> Optional[Dict]:
         """시리즈 실행 (랜덤 선택)"""
+        print(f"[SERIES] execute({platform}): Starting...", flush=True)
         platform_config = self.config.get(platform)
         if not platform_config:
+            print(f"[SERIES] execute({platform}): No platform config found", flush=True)
             return None
             
         series_config = platform_config.get('config', {})
         series_list = series_config.get('series', [])
+        print(f"[SERIES] execute({platform}): Found {len(series_list)} series definitions", flush=True)
+        
         candidates = []
         for s in series_list:
+            print(f"[SERIES] Checking series: {s['id']}", flush=True)
             if self.is_due(platform, s['id']):
                 candidates.append(s)
                 
+        print(f"[SERIES] execute({platform}): {len(candidates)} series are due", flush=True)
         if not candidates:
+            print(f"[SERIES] execute({platform}): No series due, returning None", flush=True)
             return None
             
         series = random.choice(candidates)
+        print(f"[SERIES] execute({platform}): Selected series '{series['id']}' for execution", flush=True)
         return self.execute_specific_series(platform, series)
 
     def execute_specific_series(self, platform: str, series_config: Dict) -> Optional[Dict]:

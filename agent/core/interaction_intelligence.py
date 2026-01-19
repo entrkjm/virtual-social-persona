@@ -132,8 +132,8 @@ quip_category: 짧은 반응(1-15자)으로 충분한 경우 해당 카테고리
         base_probs = strategy.get('base_probabilities', {
             'quip': 0.20,
             'short': 0.40,
-            'normal': 0.30,
-            'long': 0.05,
+            'normal': 0.34,  # Increased
+            'long': 0.01,    # Reduced (Professionalism down)
             'personal': 0.05
         })
         

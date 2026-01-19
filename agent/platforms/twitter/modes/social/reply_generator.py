@@ -9,6 +9,7 @@ from core.llm import llm_client
 from agent.core.base_generator import BaseContentGenerator, ContentConfig, ContentMode
 from agent.core.interaction_intelligence import ResponseType
 from agent.platforms.twitter.formatter import TwitterFormatter
+from agent.platforms.twitter.modes.social.reviewer import SocialReplyReviewer
 
 
 class SocialReplyGenerator(BaseContentGenerator):
@@ -17,14 +18,22 @@ class SocialReplyGenerator(BaseContentGenerator):
     def __init__(self, persona_config, platform_config: Optional[Dict] = None):
         super().__init__(persona_config, platform_config)
         self.formatter = TwitterFormatter(platform_config)
+        self.reviewer = SocialReplyReviewer(persona_config)
     
     def generate(
         self,
         target_tweet: Dict,
         perception: Dict,
-        context: Dict
+        context: Dict,
+        recent_replies: List[str] = None
     ) -> str:
         """답글 생성 - response_type 기반 분기"""
+        recent_replies = recent_replies or []
+        
+        # Diversity Check (LLM Analysis)
+        banned = self._analyze_recent_posts(recent_replies)
+        if banned.get('topics') or banned.get('expressions'):
+            print(f"[DIVERSITY] 금지 주제: {banned.get('topics', [])}")
         response_type = perception.get('response_type', ResponseType.NORMAL)
 
         # QUIP: LLM 없이 패턴 풀에서 선택
@@ -36,7 +45,7 @@ class SocialReplyGenerator(BaseContentGenerator):
 
         # SHORT: 간단 프롬프트
         if response_type == ResponseType.SHORT:
-            return self._generate_short_reply(target_tweet, perception, context)
+            return self._generate_short_reply(target_tweet, perception, context, banned)
 
         # LONG: TMI 모드 (전문 분야 주제)
         if response_type == ResponseType.LONG:
@@ -47,16 +56,18 @@ class SocialReplyGenerator(BaseContentGenerator):
             return self._generate_personal_reply(target_tweet, perception, context)
 
         # NORMAL: 기존 로직
-        return self._generate_normal_reply(target_tweet, perception, context)
+        return self._generate_normal_reply(target_tweet, perception, context, banned)
 
     def _generate_short_reply(
         self,
         target_tweet: Dict,
         perception: Dict,
-        context: Dict
+        context: Dict,
+        banned: Dict
     ) -> str:
         """SHORT 응답 (15-50자) - 최소 프롬프트"""
         constraint_prompt = self.formatter.get_constraint_prompt()
+        anti_repetition = self._build_anti_repetition_prompt(banned)
         
         def _generate():
             prompt = f"""
@@ -66,7 +77,9 @@ class SocialReplyGenerator(BaseContentGenerator):
 
 15~50자 이내로 짧게 반응하세요.
 - 자연스럽고 캐주얼하게
+- 자연스럽고 캐주얼하게
 {constraint_prompt}
+{anti_repetition}
 - 설명 없이 답글만 출력
 """
             return llm_client.generate(prompt)
@@ -76,17 +89,19 @@ class SocialReplyGenerator(BaseContentGenerator):
             min_length=15, max_length=50,
             tone="캐주얼", starters=[], endings=[], patterns=[]
         )
-        return self._validate_and_regenerate(_generate, config)
+        return self._validate_and_regenerate(_generate, config, banned=banned, target_text=target_tweet.get('text', ''))
 
     def _generate_normal_reply(
         self,
         target_tweet: Dict,
         perception: Dict,
-        context: Dict
+        context: Dict,
+        banned: Dict
     ) -> str:
         """NORMAL 응답 (50-100자) - 기존 chat 모드"""
         config = self.chat_config
         constraint_prompt = self.formatter.get_constraint_prompt()
+        anti_repetition = self._build_anti_repetition_prompt(banned)
 
         def _generate():
             energy = self._get_energy_level()
@@ -111,11 +126,13 @@ class SocialReplyGenerator(BaseContentGenerator):
 - {config.min_length}~{config.max_length}자 사이로 작성
 - 멘션(@username) 포함 금지
 - 페르소나의 말투 특성 반영
+- [중요] 전문가 티 내지 말고 친근한 이웃처럼 반응하세요. "요리사로서..." 같은 발언 자제.
+- 팁을 주더라도 "저는 이렇게 해요" 정도로 가볍게.
 {constraint_prompt}
 """
             return llm_client.generate(prompt)
 
-        return self._validate_and_regenerate(_generate, config)
+        return self._validate_and_regenerate(_generate, config, target_text=target_tweet.get('text', ''))
 
     def _generate_long_reply(
         self,
@@ -158,7 +175,7 @@ class SocialReplyGenerator(BaseContentGenerator):
 """
             return llm_client.generate(prompt)
 
-        return self._validate_and_regenerate(_generate, config)
+        return self._validate_and_regenerate(_generate, config, target_text=target_tweet.get('text', ''))
 
     def _generate_personal_reply(
         self,
@@ -193,18 +210,34 @@ class SocialReplyGenerator(BaseContentGenerator):
 """
             return llm_client.generate(prompt)
 
-        return self._validate_and_regenerate(_generate, config)
+        return self._validate_and_regenerate(_generate, config, target_text=target_tweet.get('text', ''))
 
     def _validate_and_regenerate(
         self,
         generate_fn,
         config: ContentConfig,
-        max_retries: int = 3
+        max_retries: int = 3,
+        target_text: str = "",
+        banned: Dict = None
     ) -> str:
         """검증 실패 시 재생성"""
+        banned = banned or {}
+        
         for attempt in range(max_retries):
             text = generate_fn()
             text = self._post_process(text, config)
+
+            # [NEW] Check Diversity
+            if banned:
+                is_diverse, reason = self._check_diversity(text, banned)
+                if not is_diverse:
+                    print(f"[DIVERSITY] 다양성 실패 (시도 {attempt + 1}/{max_retries}): {reason}")
+                    continue
+
+            # [NEW] Reviewer Check
+            if target_text:
+                text = self.reviewer.review_reply(target_text, text)
+
 
             forbidden = self.formatter.check_forbidden(text)
             if not forbidden:
@@ -224,4 +257,5 @@ class SocialReplyGenerator(BaseContentGenerator):
             text = text[:config.max_length - 3] + "..."
 
         text = self.formatter.apply_constraints(text)
+        
         return text

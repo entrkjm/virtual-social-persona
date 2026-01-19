@@ -72,20 +72,35 @@ class MemoryConsolidator:
         if over_soft_ceiling:
             print(f"[CONSOLIDATION] Over soft ceiling: {total_count}/{self.tier_manager.CAPACITY_CONFIG.soft_ceiling}")
 
+        print(f"[CONSOLIDATION] Start: {total_count} inspirations", flush=True)
+
         # 1. 강도 계산 및 정렬 (품질 경쟁)
         strength_map = []
         for insp in all_inspirations:
             current_strength = self.tier_manager.calculate_current_strength(insp)
             strength_map.append((insp, current_strength))
+        
+        print("[CONSOLIDATION] Strength calculated", flush=True)
 
         strength_map.sort(key=lambda x: x[1])
 
         # 2. 하위 N% 식별
         bottom_count = self.tier_manager.get_bottom_percentile_count(total_count)
         bottom_inspirations = set(insp.id for insp, _ in strength_map[:bottom_count])
+        print(f"[CONSOLIDATION] Bottom N identified: {bottom_count}", flush=True)
 
         # 3. 모든 영감 처리
+        
+        # Batch collectors
+        vector_updates_ids = []
+        vector_updates_metadatas = []
+        vector_deletes_ids = []
+
+        i = 0
         for insp, current_strength in strength_map:
+            i += 1
+            # print(f"[CONSOLIDATION] Processing {i}/{total_count} (ID: {insp.id[:8]})", flush=True)
+            
             is_bottom = insp.id in bottom_inspirations
 
             # 하위 N%는 가속 감쇠 적용
@@ -99,18 +114,20 @@ class MemoryConsolidator:
 
             # 최소 생존 강도 이하면 삭제
             if current_strength < self.tier_manager.CAPACITY_CONFIG.min_strength_to_survive:
+                # print(f"[CONSOLIDATION] [{i}] Deleting weak item {insp.id[:8]}", flush=True)
                 self.db.delete_inspiration(insp.id)
                 if self.vector_store:
-                    self.vector_store.delete_inspiration(insp.id)
+                    vector_deletes_ids.append(insp.id)
                 stats['deleted'] += 1
                 continue
 
             # 강등 체크
             action = self.tier_manager.demote_or_delete(insp, current_strength)
             if action == 'delete':
+                # print(f"[CONSOLIDATION] [{i}] Demote -> Delete {insp.id[:8]}", flush=True)
                 self.db.delete_inspiration(insp.id)
                 if self.vector_store:
-                    self.vector_store.delete_inspiration(insp.id)
+                    vector_deletes_ids.append(insp.id)
                 stats['deleted'] += 1
                 continue
 
@@ -121,11 +138,35 @@ class MemoryConsolidator:
             if self.tier_manager.promote(insp):
                 stats['promoted'] += 1
                 if insp.tier == 'core':
+                    print(f"[CONSOLIDATION] Creating Core Memory from {insp.id[:8]}...", flush=True)
                     core_memory = self.tier_manager.create_core_memory_from_inspiration(insp)
                     self.db.add_core_memory(core_memory)
 
             self.db.update_inspiration(insp)
-            self._sync_vector_metadata(insp)
+            
+            # Collect for batch update
+            if self.vector_store:
+                vector_updates_ids.append(insp.id)
+                vector_updates_metadatas.append({
+                    'tier': insp.tier,
+                    'strength': insp.strength,
+                    'topic': insp.topic,
+                    'emotional_impact': insp.emotional_impact,
+                    'reinforcement_count': insp.reinforcement_count
+                })
+
+        # Apply Batch Updates
+        if self.vector_store:
+            if vector_deletes_ids:
+                print(f"[CONSOLIDATION] Batch deleting {len(vector_deletes_ids)} items from VectorStore...", flush=True)
+                self.vector_store.delete_inspirations_batch(vector_deletes_ids)
+            
+            if vector_updates_ids:
+                print(f"[CONSOLIDATION] Batch updating {len(vector_updates_ids)} items in VectorStore...", flush=True)
+                self.vector_store.update_inspirations_batch(vector_updates_ids, vector_updates_metadatas)
+                print(f"[CONSOLIDATION] Batch update complete", flush=True)
+        else:
+            print(f"[CONSOLIDATION] VectorStore sync SKIPPED (disabled)", flush=True)
 
         end_time = datetime.now()
         duration_ms = int((end_time - start_time).total_seconds() * 1000)

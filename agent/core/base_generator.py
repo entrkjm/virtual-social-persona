@@ -151,6 +151,39 @@ class BaseContentGenerator(ABC):
 
         return True, "OK"
 
+    def _build_anti_repetition_prompt(self, banned: Dict) -> str:
+        """다양성 확보를 위한 프롬프트 빌드"""
+        if not banned.get('topics') and not banned.get('expressions'):
+            return ""
+            
+        topics_str = ', '.join(banned.get('topics', [])) or '없음'
+        openers_str = ' / '.join([f'"{o}"' for o in banned.get('openers', [])]) or '없음'
+        exprs_str = ', '.join(banned.get('expressions', [])) or '없음'
+        prev_tone = banned.get('tone', '')
+
+        tone_guide = ""
+        if prev_tone:
+            tone_guide = f"- 최근 톤이 '{prev_tone}'이었으니, 다른 톤(가벼움/유머/실용적 등)으로 시도해보세요"
+
+        return f"""
+### 🚫 다양성 규칙 (매우 중요 - 반드시 지켜야 함):
+
+**금지된 주제/소재** (최근에 다뤘음, 절대 언급 금지):
+{topics_str}
+
+**금지된 시작 표현** (다른 방식으로 시작하세요):
+{openers_str}
+
+**금지된 표현들** (최근 자주 씀, 사용 금지):
+{exprs_str}
+
+**다양성 원칙**:
+1. 위 주제들과 완전히 다른 새로운 주제로 작성
+2. 위 시작 표현 대신 완전히 다른 방식으로 시작 (질문, 감탄, 직접 진입 등)
+3. 위 표현들을 하나도 사용하지 않기
+{tone_guide}
+"""
+
     def _get_energy_level(self) -> str:
         weights = {'tired': 0.25, 'normal': 0.50, 'excited': 0.25}
         return random.choices(
