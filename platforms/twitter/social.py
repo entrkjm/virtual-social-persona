@@ -82,15 +82,18 @@ def _is_session_expired(error: Exception) -> bool:
 
 
 async def _with_retry(func, *args, **kwargs):
-    """세션 만료 시 재로그인 후 재시도"""
+    """세션 만료 시 재로그인 후 재시도 (Timeout 10s)"""
     try:
-        return await func(*args, **kwargs)
+        return await asyncio.wait_for(func(*args, **kwargs), timeout=15.0)
+    except asyncio.TimeoutError:
+        print(f"[TWITTER] Timeout (15s)")
+        raise
     except Exception as e:
         if _is_session_expired(e):
             print(f"[TWITTER] 세션 만료 감지, 재로그인...")
             if os.path.exists(COOKIES_FILE):
                 os.remove(COOKIES_FILE)
-            return await func(*args, **kwargs)
+            return await asyncio.wait_for(func(*args, **kwargs), timeout=15.0)
         raise
 
 
@@ -422,4 +425,63 @@ def get_my_tweets(screen_name: str, count: int = 50) -> List[dict]:
         return asyncio.run(_get_my_tweets_twikit(screen_name, count))
     except Exception as e:
         print(f"[MY_TWEETS] failed: {e}")
+        return []
+
+async def _get_trends_twikit(woeid: int = 23424868):
+    async def _do():
+        client = await _get_twikit_client()
+        # get_place_trends returns trends for a specific WOEID (South Korea = 23424868)
+        result = await client.get_place_trends(woeid)
+        if isinstance(result, dict):
+            trends = result.get('trends', [])
+        else:
+            trends = getattr(result, 'trends', [])
+        
+        return [t.get('name') if isinstance(t, dict) else getattr(t, 'name', str(t)) for t in trends]
+    return await _with_retry(_do)
+
+
+def get_trends(woeid: int = 23424868) -> List[str]:
+    """트렌드 가져오기 (WOEID: 23424868 = South Korea)"""
+    try:
+        return asyncio.run(_get_trends_twikit(woeid))
+    except Exception as e:
+        print(f"[TRENDS] failed: {e}")
+        return []
+
+async def _get_new_followers_twikit(screen_name: str, count: int = 20):
+    async def _do():
+        client = await _get_twikit_client()
+        # Twikit doesn't have a direct "new followers" since X, 
+        # but we can fetch recent followers
+        # user = await client.get_user_by_screen_name(screen_name)
+        # followers = await user.get_followers(count=count)
+        
+        # Alternatively, use get_followers with user_id if we have it, 
+        # but using screen_name logic:
+        user = await client.get_user_by_screen_name(screen_name)
+        followers = await user.get_followers(count=count)
+        
+        results = []
+        for follower in followers:
+             results.append({
+                "id": follower.id,
+                "screen_name": follower.screen_name,
+                "name": follower.name,
+                "bio": follower.description,
+                "followers_count": follower.followers_count,
+                 "following_count": follower.following_count,
+                 "created_at": str(follower.created_at) if hasattr(follower, 'created_at') else None,
+                 "profile_image_url": follower.profile_image_url,
+                 "following": getattr(follower, 'following', False)
+             })
+        return results
+    return await _with_retry(_do)
+
+def get_new_followers(screen_name: str, count: int = 20) -> List[dict]:
+    """최근 팔로워 조회"""
+    try:
+        return asyncio.run(_get_new_followers_twikit(screen_name, count))
+    except Exception as e:
+        print(f"[FOLLOWERS] failed: {e}")
         return []

@@ -346,5 +346,33 @@ class FollowEngine:
         ]
 
 
+
+    def check_new_followers_and_followback(self, new_followers: List[SocialUser]):
+        """새 팔로워 검증 및 맞팔로우 큐잉"""
+        if not self.config.get('enabled', True):
+            return
+
+        print(f"[FOLLOW] Checking {len(new_followers)} new followers for follow-back...")
+        
+        for user in new_followers:
+            # 1. 자격 검증
+            eligible, reason = self._check_eligibility(user)
+            if not eligible:
+                print(f"[FOLLOW] Skip @{user.username}: {reason}")
+                continue
+
+            # 2. 점수 계산
+            score = self._calculate_score(user, {'interaction_count': 0})
+            
+            # 3. 맞팔로우 확률 (기본 확률보다 높게 설정 가능)
+            threshold = self.config.get('score_threshold', 40)
+            if score >= threshold:
+                # 맞팔 확률 보정 (우호적 대상이므로)
+                queue_prob = 0.5 + (score / 200) # 0.5 ~ 1.0
+                
+                if random.random() < queue_prob:
+                    self.queue_follow(user.id, user.username, context={'source': 'follow_back', 'score': score})
+                    print(f"[FOLLOW] Follow-back queued: @{user.username} (Score: {score})")
+
 # Global instance
 follow_engine = FollowEngine()

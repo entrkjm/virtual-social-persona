@@ -54,8 +54,19 @@ class SocialAgent:
         )
         # Mode-specific content generators
         platform_config = self.persona.signature_series.get('twitter', {}).get('config', {})
+        social_mode_cfg = self.persona.platform_configs.get('twitter', {}).get('modes', {}).get('social', {})
+        # Merge 'config' and 'behavior' from social mode if they exist for better visibility in generator
+        social_full_cfg = {}
+        if isinstance(social_mode_cfg, dict):
+             social_full_cfg.update(social_mode_cfg.get('config', {}))
+             social_full_cfg.update(social_mode_cfg.get('behavior', {}))
+             # Preserve any other root keys like 'style' or 'quip_pool' if they were moved
+             for k, v in social_mode_cfg.items():
+                 if k not in ['config', 'behavior']: # 'style' should be preserved if it's a root key
+                     social_full_cfg[k] = v
+
         self.post_generator = CasualPostGenerator(self.persona, platform_config)
-        self.reply_generator = SocialReplyGenerator(self.persona, platform_config)
+        self.reply_generator = SocialReplyGenerator(self.persona, social_full_cfg)
         self.full_system_prompt = self.persona.system_prompt
         
         # Initialize Sub-components with DI
@@ -413,7 +424,7 @@ class SocialAgent:
                     recent_replies = [e.content for e in recent_episodes if e.type == 'replied']
 
                     # 답글 생성
-                    reply_content = self.reply_generator.generate(
+                    raw_reply = self.reply_generator.generate(
                         target_tweet=tweet,
                         perception=perception,
                         recent_replies=recent_replies,
@@ -423,6 +434,9 @@ class SocialAgent:
                             'interests': agent_memory.get_top_interests(limit=10)
                         }
                     )
+                    
+                    # 답글 검토 (Reviewer)
+                    reply_content = self.social_reviewer.review_reply(mention.text, raw_reply)
 
                     if reply_content:
                         try:
@@ -490,8 +504,26 @@ class SocialAgent:
 
             curiosity_keywords = agent_memory.get_top_interests(limit=10)
 
-            # Trends removed
+            # Trends Re-enabled
             trend_keywords = []
+            if hasattr(self.adapter, 'get_trends'):
+                try:
+                    trend_keywords = self.adapter.get_trends(location='KR')
+                    print(f"[SCOUT] Trends fetched: {trend_keywords[:5]}...")
+                except Exception as e:
+                    print(f"[SCOUT] Trends fetch failed: {e}")
+
+                except Exception as e:
+                    print(f"[SCOUT] Trends fetch failed: {e}")
+
+            # 0. Check New Followers (Deep Socializing) using simple probability
+            if random.random() < 0.2: # 20% chance per scout
+                 try:
+                     new_followers = self.adapter.get_new_followers(count=10)
+                     if new_followers:
+                         follow_engine.check_new_followers_and_followback(new_followers)
+                 except Exception as e:
+                     print(f"[SCOUT] Follower check failed: {e}")
 
             # inspiration_pool에서 활성 영감 토픽
             inspiration_topics = []
@@ -723,6 +755,12 @@ class SocialAgent:
                 executable=self.check_mentions
             ),
             Function(
+                fn_name="check_my_replies",
+                fn_description="[15% 확률] 내 트윗에 달린 답글 확인 및 대댓글/반응.",
+                args=[],
+                executable=self.check_my_replies
+            ),
+            Function(
                 fn_name="post_tweet",
                 fn_description="[RARE - 5% 사용] 독립 게시물 작성. 특별한 영감이 있을 때만 사용. scout_timeline이나 check_mentions 결과를 재포스팅하지 마세요.",
                 args=[
@@ -731,5 +769,63 @@ class SocialAgent:
                 executable=self.post_tweet_executable
             )
         ]
+    
+    def check_my_replies(self) -> Tuple[FunctionResultStatus, str, Dict[str, Any]]:
+        """내 트윗에 달린 답글 확인 (Deep Socializing)"""
+        try:
+            # 1. 내 최근 트윗 가져오기
+            # adapter.get_my_tweets expects screen_name
+            import os
+            my_username = os.getenv("TWITTER_USERNAME")
+            
+            if not my_username:
+                 return FunctionResultStatus.FAILED, "No TWITTER_USERNAME env var", {}
+
+            my_tweets = self.adapter.get_my_tweets(screen_name=my_username, count=5)
+            
+            if not my_tweets:
+                return FunctionResultStatus.DONE, "No specific tweets found to check replies", {}
+            
+            actions_log = []
+            
+            for my_tweet in my_tweets:
+                # 2. 각 트윗의 답글 가져오기
+                tweet_id = my_tweet['id']
+                replies = self.adapter.get_tweet_replies(tweet_id)
+                
+                for reply in replies:
+                    # Logic: 30% Reply chance
+                    if random.random() < 0.3:
+                         print(f"[DEEP SOCIAL] Replying to reply by {reply['user']}: {reply['text']}")
+                         
+                         target_tweet = {'text': reply['text'], 'user': reply['user']}
+                         
+                         # Generate
+                         raw_reply = self.reply_generator.generate(
+                            target_tweet=target_tweet,
+                            perception={'topics': [], 'sentiment': 'neutral', 'complexity': 'simple', 'relevance_to_domain': 0.8},
+                            recent_replies=[],
+                            context={
+                                'system_prompt': self.full_system_prompt,
+                                'mood': self._get_current_mood(),
+                                'interests': []
+                            }
+                        )
+                         
+                         # Review
+                         refined_reply = self.social_reviewer.review_reply(reply['text'], raw_reply)
+                         
+                         if refined_reply:
+                             self.adapter.reply(reply['id'], refined_reply)
+                             actions_log.append(f"Replied to {reply['user']}")
+                             
+            if not actions_log:
+                return FunctionResultStatus.DONE, "Checked replies (no action triggered)", {}
+                
+            return FunctionResultStatus.DONE, f"Deep social actions: {', '.join(actions_log)}", {}
+            
+        except Exception as e:
+            return FunctionResultStatus.FAILED, f"Error checking my replies: {e}", {}
+
 
 # Global instance removed - injected in main.py

@@ -411,6 +411,14 @@ class BehaviorEngine:
              if not (same_user_config.get('obsession_override', True) and is_obsession):
                 return 0.1 # Significant drop
 
+        # Relevance Logic (Soft Filter)
+        relevance = context.get('perception', {}).get('relevance_to_domain', 1.0)
+        # 0.5 + 0.5 * 0.0 (irrelevant) = 0.5x penalty
+        # 0.5 + 0.5 * 1.0 (relevant) = 1.0x (no penalty)
+        relevance_modifier = 0.5 + (0.5 * relevance)
+        score *= relevance_modifier
+        log_factors.append(f"Relevance({relevance:.2f}→x{relevance_modifier:.2f})")
+
         # 3. Apply Modifiers (Additive)
         
         # Mode Modifier

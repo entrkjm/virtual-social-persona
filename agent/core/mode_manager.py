@@ -174,7 +174,8 @@ class ModeManager:
         return {
             'scout': step_probs.get('scout_probability', 0.80),
             'mentions': step_probs.get('mentions_probability', 0.15),
-            'post': step_probs.get('post_probability', 0.05)
+            'reply_check': step_probs.get('reply_check_probability', 0.05), # New
+            'post': step_probs.get('post_probability', 0.05) # Reduced in practice as sum > 1 is handled by weights
         }
 
     def on_error(self, error_code: Optional[int] = None):

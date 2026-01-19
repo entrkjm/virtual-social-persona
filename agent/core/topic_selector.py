@@ -21,16 +21,16 @@ class TopicSource:
 class TopicSelector:
     """가중치 기반 토픽 선택기"""
 
-    # 소스별 가중치
+    # 소스별 가중치 (inspiration 낮춤 - 무관 토픽 방지)
     SOURCE_WEIGHTS = {
         'core': 1.0,        # 페르소나 본질
         'time': 1.2,        # 시간대별
-        'curiosity': 2.0,   # 최근 관심사
-        'inspiration': 2.5, # flash/brewing 영감
+        'curiosity': 1.8,   # 최근 관심사
+        'inspiration': 1.0, # flash/brewing 영감 (2.5 → 1.0으로 낮춤)
         'trends': 1.5,      # 트위터 트렌드
     }
 
-    COOLDOWN_STEPS = 3  # 최근 N스텝 사용한 키워드 제외
+    COOLDOWN_STEPS = 6  # 최근 N스텝 사용한 키워드 제외 (3 → 6으로 증가)
 
     def __init__(self):
         self._recent_queries: deque = deque(maxlen=self.COOLDOWN_STEPS)

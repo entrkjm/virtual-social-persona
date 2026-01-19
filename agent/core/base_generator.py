@@ -42,14 +42,23 @@ class BaseContentGenerator(ABC):
         self.pattern_tracker = create_pattern_tracker(persona_config)
     
     def _load_quip_pool(self):
-        """QUIP 응답용 패턴 풀 로드"""
-        raw = getattr(self.persona, 'raw_data', {})
-        self.quip_pool = raw.get('quip_pool', {})
+        """QUIP 응답용 패턴 풀 로드 (페르소나 설정 우선)"""
+        # 1. 플랫폼 모드 설정에서 로드 (가장 우선순위 높음)
+        # self.platform_config는 이제 모드별 설정을 포함해야 함
+        self.quip_pool = self.platform_config.get('quip_pool', {})
+        
+        # 2. 페르소나 데이터에서 로드 (identity.yaml 등)
         if not self.quip_pool:
+            raw = getattr(self.persona, 'raw_data', {})
+            self.quip_pool = raw.get('quip_pool', {})
+            
+        # 3. 시스템 기본값 (최후의 수단)
+        if not self.quip_pool:
+            print(f"[GENERATOR] No quip_pool found in config, using system fallback")
             self.quip_pool = {
                 'agreement': ['인정', 'ㄹㅇ', '맞음'],
                 'impressed': ['오...', '와...'],
-                'casual': ['ㅋㅋ', 'ㅎㅎ'],
+                'casual': ['ㅋㅋ', 'ㅎㅎ'],  # 시스템 기본값은 복구 (오버라이드가 작동해야 함)
                 'food_related': ['좋아요'],
                 'skeptical': ['글쎄요...', '...'],
                 'simple_answer': ['네', '아뇨']

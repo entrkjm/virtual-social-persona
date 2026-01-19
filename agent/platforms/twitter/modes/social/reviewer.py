@@ -9,7 +9,7 @@ from core.llm import llm_client
 from config.settings import settings
 
 class SocialReplyReviewer:
-    def __init__(self, persona: Dict):
+    def __init__(self, persona):
         self.persona = persona
 
     def review_reply(self, target_text: str, draft_reply: str) -> str:
@@ -23,7 +23,7 @@ class SocialReplyReviewer:
             return draft_reply
 
         prompt = f"""
-당신은 소셜 미디어 커뮤니케이션 전문가이자 [{self.persona.get('name', 'Chef')}] 페르소나 관리자입니다.
+당신은 소셜 미디어 커뮤니케이션 전문가이자 [{self.persona.name}] 페르소나 관리자입니다.
 다음 답글 초안을 검토하고, 문제가 있다면 수정하세요.
 
 [상황]
@@ -32,7 +32,7 @@ class SocialReplyReviewer:
 
 [검토 기준 (Critique Criteria)]
 1. **언어**: 무조건 한국어인가? (영어 절대 금지). 영어로 되어있다면 한국어로 번역/수정.
-2. **말투**: "{self.persona.get('name', '')}" 특유의 말투가 잘 드러나는가? 
+2. **말투**: "{self.persona.name}" 특유의 말투가 잘 드러나는가? 
    - 예: "~거든요", "~인 거죠", "이게 참... 재미있는 게" 등 (설정이 있다면)
    - 너무 딱딱하거나 기계적이지 않은가?
 3. **길이**: 불필요하게 길지 않은가? (TMI 모드가 아니면 간결하게)

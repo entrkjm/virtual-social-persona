@@ -135,3 +135,39 @@ class TwitterAdapter(SocialPlatformAdapter):
             following_me=profile.get('following', False), # Twikit naming might vary
             raw_data=profile
         )
+
+
+    def get_trends(self, location: str = 'KR') -> List[str]:
+        """트렌드 키워드 가져오기 (KR = South Korea WOEID 23424868)"""
+        woeid = 23424868 if location == 'KR' else 1 # Global fallback or specific mapping
+        try:
+            return twitter_api.get_trends(woeid=woeid)
+        except Exception as e:
+            print(f"[TwitterAdapter] get_trends failed: {e}")
+            return []
+
+    def get_new_followers(self, count: int = 20) -> List[SocialUser]:
+        """새 팔로워 가져오기"""
+        username = os.getenv("TWITTER_USERNAME")
+        if not username: return []
+        
+        results = twitter_api.get_new_followers(username, count)
+        users = []
+        for item in results:
+             created_at = self._parse_date(item.get('created_at'))
+             
+             user = SocialUser(
+                id=item['id'],
+                username=item['screen_name'],
+                name=item['name'],
+                bio=item['bio'],
+                followers_count=item['followers_count'],
+                following_count=item['following_count'],
+                created_at=created_at,
+                profile_image_url=item['profile_image_url'],
+                following_me=True, # they are followers
+                is_following=item.get('following', False), # am I following them?
+                raw_data=item
+             )
+             users.append(user)
+        return users
