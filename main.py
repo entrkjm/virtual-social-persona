@@ -165,24 +165,27 @@ def run_with_sdk():
         print("\nShutdown")
 
 
+from agent.core.logger import logger
+
 def run_standalone():
     """Standalone 모드: SDK 없이 직접 루프"""
     try:
         persona = active_persona
         activity_scheduler = ActivityScheduler(persona.behavior)
         step_min, step_max = mode_manager.get_step_interval()
-        print(f"[INIT] {persona.name} (Standalone Mode)")
-        print(f"[INIT] Mode: {mode_manager.mode.value} (interval: {step_min}-{step_max}s)")
-        print(f"[INIT] Activity schedule loaded")
+        
+        logger.info(f"============ AGENT START ============")
+        logger.info(f"Identity: {persona.name} (Standalone Mode)")
+        logger.info(f"Mode: {mode_manager.mode.value} (interval: {step_min}-{step_max}s)")
+        logger.info(f"Activity schedule loaded")
 
         from agent.memory import agent_memory
         from core.llm import llm_client
 
-        # 여기가 Blocking 포인트일 수 있음 (초기화 시 네트워크 호출 등)
-        print("[INIT] Loading Agent State...")
+        logger.info("Loading Agent State...")
         social_agent.get_state_fn(function_result=None, current_state={})
 
-        print("[RUN] Starting standalone loop")
+        logger.info("Starting standalone loop")
 
         step_count = 0
         while True:
@@ -192,13 +195,13 @@ def run_standalone():
                     is_active, state, next_active = activity_scheduler.is_active_now()
                     if not is_active:
                         sleep_seconds = activity_scheduler.get_seconds_until_active()
-                        print(f"[SLEEP] {state.value} - resuming in {sleep_seconds//60}m")
+                        logger.info(f"[SLEEP] {state.value} - resuming in {sleep_seconds//60}m")
                         time.sleep(min(sleep_seconds, 3600))
                         continue
 
                     if mode_manager.should_take_break() and activity_scheduler.should_take_break():
                         break_duration = activity_scheduler.get_seconds_until_active()
-                        print(f"[BREAK] Taking a break for {break_duration//60}m")
+                        logger.info(f"[BREAK] Taking a break for {break_duration//60}m")
                         time.sleep(break_duration)
                         continue
 
@@ -216,7 +219,7 @@ def run_standalone():
                     status, message, data = social_agent.post_tweet_executable(content="")
 
 
-                print(f"[STEP {step_count}] {action_name}: {message}")
+                logger.info(f"[STEP {step_count}] {action_name}: {message}")
                 step_count += 1
 
                 social_agent.get_state_fn(function_result=None, current_state={})
@@ -229,7 +232,10 @@ def run_standalone():
                 if follow_results:
                     for screen_name, success, reason in follow_results:
                         status = "OK" if success else "FAIL"
-                        print(f"[FOLLOW] @{screen_name}: {status} - {reason}")
+                        if success:
+                            logger.info(f"[FOLLOW] @{screen_name}: {status} - {reason}")
+                        else:
+                            logger.warning(f"[FOLLOW] @{screen_name}: {status} - {reason}")
 
                 mode_manager.on_success()
                 step_min, step_max = mode_manager.get_step_interval()
@@ -245,7 +251,7 @@ def run_standalone():
                     adjusted_max = step_max
                     
                 wait_time = random.randint(adjusted_min, adjusted_max)
-                print(f"[WAIT] {wait_time}s (activity: {activity_level:.1f})")
+                logger.info(f"[WAIT] {wait_time}s (activity: {activity_level:.1f})")
                 time.sleep(wait_time)
 
             except Exception as e:
@@ -258,19 +264,21 @@ def run_standalone():
                     error_code = 226
                 elif "401" in str(e):
                     error_code = 226 # Treat as blocking error
+                elif "403" in str(e): # Cloudflare block likely
+                    error_code = 226 
 
                 should_pause = mode_manager.on_error(error_code)
                 if should_pause:
-                    print("[MODE] Pausing for 5 minutes due to consecutive errors")
+                    logger.warning("[MODE] Pausing for 5 minutes due to consecutive errors")
                     time.sleep(300)
                 else:
-                    print(f"[ERR] {e}")
+                    logger.error(f"[ERR] {e}")
                     time.sleep(10)
 
     except KeyboardInterrupt:
-        print("\n[STOP] Shutdown via KeyboardInterrupt")
+        logger.info("\n[STOP] Shutdown via KeyboardInterrupt")
     except Exception as e:
-        print(f"\n[FATAL] Crash during initialization: {e}")
+        logger.critical(f"\n[FATAL] Crash during initialization: {e}", exc_info=True)
 
 
 def main():

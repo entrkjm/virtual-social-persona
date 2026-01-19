@@ -33,6 +33,7 @@ from agent.core.topic_selector import TopicSelector
 from agent.knowledge.knowledge_base import knowledge_base
 from agent.platforms.twitter.modes.series.engine import SeriesEngine
 from agent.persona.pattern_tracker import PatternTracker
+from agent.core.logger import logger
 
 class SocialAgent:
     def __init__(self, adapter: SocialPlatformAdapter):
@@ -415,7 +416,7 @@ class SocialAgent:
                             actions_taken.append("LIKED")
                             human_like_controller.apply_action_delay('like')
                     except Exception as e:
-                        print(f"Like failed: {e}")
+                        logger.error(f"Like failed: {e}")
 
                 reply_content = None
                 if actions.get('comment') or actions.get('reply'):
@@ -459,7 +460,7 @@ class SocialAgent:
                                     emotional_impact=0.6
                                 ))
                         except Exception as e:
-                            print(f"Reply failed: {e}")
+                            logger.error(f"Reply failed: {e}")
 
             if not actions_taken:
                 return FunctionResultStatus.DONE, f"Processed mention from @{mention.user.username} (no action)", {}
@@ -478,7 +479,7 @@ class SocialAgent:
 
             can_act, reason = human_like_controller.can_take_action()
             if not can_act:
-                print(f"[HUMAN-LIKE] 액션 제한: {reason}")
+                logger.info(f"[HUMAN-LIKE] 액션 제한: {reason}")
                 return FunctionResultStatus.DONE, f"SKIP (human-like): {reason}", {'human_like_skip': True}
 
             # SCOUT
@@ -509,12 +510,9 @@ class SocialAgent:
             if hasattr(self.adapter, 'get_trends'):
                 try:
                     trend_keywords = self.adapter.get_trends(location='KR')
-                    print(f"[SCOUT] Trends fetched: {trend_keywords[:5]}...")
+                    logger.info(f"[SCOUT] Trends fetched: {trend_keywords[:5]}...")
                 except Exception as e:
-                    print(f"[SCOUT] Trends fetch failed: {e}")
-
-                except Exception as e:
-                    print(f"[SCOUT] Trends fetch failed: {e}")
+                    logger.warning(f"[SCOUT] Trends fetch failed: {e}")
 
             # 0. Check New Followers (Deep Socializing) using simple probability
             if random.random() < 0.2: # 20% chance per scout
@@ -523,7 +521,7 @@ class SocialAgent:
                      if new_followers:
                          follow_engine.check_new_followers_and_followback(new_followers)
                  except Exception as e:
-                     print(f"[SCOUT] Follower check failed: {e}")
+                     logger.warning(f"[SCOUT] Follower check failed: {e}")
 
             # inspiration_pool에서 활성 영감 토픽
             inspiration_topics = []
@@ -543,7 +541,7 @@ class SocialAgent:
                 inspiration_topics=inspiration_topics
             )
 
-            print(f"[SCOUT] query={search_query} (source={source})")
+            logger.info(f"[SCOUT] query={search_query} (source={source})")
             
             # Use Adapter
             posts = self.adapter.search(search_query, count=8)
@@ -555,7 +553,7 @@ class SocialAgent:
             
             candidates = []
             
-            print(f"[SCOUT] Analyzing {len(posts)} posts (Batch)...")
+            logger.info(f"[SCOUT] Analyzing {len(posts)} posts (Batch)...")
 
             # 1. Batch Perception
             perceptions = self.interaction_intelligence.batch_perceive_tweets(posts)
