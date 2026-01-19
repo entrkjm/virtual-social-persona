@@ -64,6 +64,8 @@ class ImageGenerator:
 You are an Art Director specializing in CANDID, AMATEUR-LOOKING food photography.
 Your goal is to create prompts that look like a HOME COOK took a quick photo with their SMARTPHONE - NOT professional food photography.
 
+IMPORTANT: "Smartphone photo" means the STYLE of the photo (casual, unedited) - DO NOT include any smartphone or phone device in the actual image!
+
 Generate 4 DISTINCT prompt variations for: "{topic}"
 Context: {context_str}
 
@@ -72,6 +74,7 @@ CRITICAL STYLE REQUIREMENTS:
 2. Emphasize IMPERFECTIONS: messy table, uneven lighting, not perfectly composed
 3. Use casual angles like someone hastily snapped a photo before eating
 4. Include realistic flaws: slight blur, grain, uneven focus, background clutter
+5. DO NOT show any phone, smartphone, or hands holding devices in the image
 
 AVOID THESE (negative): {negative_prompts}
 

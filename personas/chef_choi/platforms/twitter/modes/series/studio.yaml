@@ -36,7 +36,7 @@ prompt_guide:
       quality: "smartphone camera quality, visible grain, not pin-sharp, slight motion blur"
       environment: "cluttered background, messy kitchen, everyday home setting"
       
-  negative_prompts: "8k, 4k, highly detailed, professional food photography, cinematic lighting, masterpiece, perfectly plated, studio lighting, plastic looking, 3d render, illustration, cartoon, anime, CGI, digital art, stock photo, commercial, advertising, magazine cover, award winning, michelin star presentation"
+  negative_prompts: "smartphone in image, phone in frame, hands holding phone, selfie, 8k, 4k, highly detailed, professional food photography, cinematic lighting, masterpiece, perfectly plated, studio lighting, plastic looking, 3d render, illustration, cartoon, anime, CGI, digital art, stock photo, commercial, advertising, magazine cover, award winning, michelin star presentation"
 
 # Image Critic Settings
 critic:
