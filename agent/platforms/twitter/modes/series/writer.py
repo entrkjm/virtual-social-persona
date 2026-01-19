@@ -19,9 +19,13 @@ class ContentWriter:
         # 만약 'writer' 키가 있으면 그 안에서 찾고, 없으면 전달된 딕셔너리 자체를 설정으로 봄
         writer_config = template.get('writer', template)
         
-        if 'system_prompt' in writer_config and 'user_prompt' in writer_config:
-            system_prompt = self._build_dynamic_prompt(writer_config['system_prompt'], series_name, topic, template)
-            user_prompt = self._build_dynamic_prompt(writer_config['user_prompt'], series_name, topic, template)
+        # Support both naming conventions: 'system_prompt'/'user_prompt' OR 'system_template'/'user_template'
+        system_key = 'system_prompt' if 'system_prompt' in writer_config else 'system_template'
+        user_key = 'user_prompt' if 'user_prompt' in writer_config else 'user_template'
+        
+        if system_key in writer_config and user_key in writer_config:
+            system_prompt = self._build_dynamic_prompt(writer_config[system_key], series_name, topic, template)
+            user_prompt = self._build_dynamic_prompt(writer_config[user_key], series_name, topic, template)
         else:
             # Fallback to hardcoded logic if YAML doesn't have writer prompts
             system_prompt = self._build_system_prompt(template)

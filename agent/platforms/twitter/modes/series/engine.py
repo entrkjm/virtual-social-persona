@@ -170,6 +170,10 @@ class SeriesEngine:
                     images.append(final_path)
                     print(f"[SeriesEngine] Selected Image {selected_index}: {final_path}")
                 
+                # Save Generated Text
+                text_path = self.archiver.save_asset(series_id, topic, "content.txt", content.encode('utf-8'))
+                print(f"[SeriesEngine] Saved content: {text_path}")
+                
                 plan['review_result'] = review_meta
             else:
                 print("[SeriesEngine] No images generated.")

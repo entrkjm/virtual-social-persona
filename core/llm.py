@@ -62,7 +62,12 @@ class GeminiClient(BaseLLMClient):
         if not self.client:
             return "Error: LLM not initialized."
 
-        full_prompt = f"{system_prompt}\n\nUser Input:\n{prompt}" if system_prompt else prompt
+        # 시스템 프롬프트와 사용자 프롬프트를 명확하게 구분하여 전달
+        if system_prompt:
+            full_prompt = f"[시스템 지시]\n{system_prompt}\n\n[사용자 요청]\n{prompt}"
+        else:
+            full_prompt = prompt
+            
         target_model = model or self.model_name
 
         try:
