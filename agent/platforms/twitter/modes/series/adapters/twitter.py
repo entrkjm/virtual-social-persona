@@ -18,12 +18,17 @@ class PlatformAdapter(ABC):
 
 class TwitterAdapter(PlatformAdapter):
     MAX_LENGTH = 200  # Reduced further for safety
+    MAX_THREAD_LENGTH = 3  # 최대 3개 트윗으로 제한
+    TWEET_DELAY = 15  # 트윗 사이 15초 딜레이
     
     def publish(self, content: str, images: List[str], config: Dict) -> Dict:
         format_type = config.get('format', 'single')
         
-        # 1. 콘텐츠 분할 (스레드)
+        # 1. 콘텐츠 분할 (스레드) - 최대 길이 제한
         chunks = self._split_content(content)
+        if len(chunks) > self.MAX_THREAD_LENGTH:
+            print(f"[TwitterAdapter] Truncating {len(chunks)} tweets to {self.MAX_THREAD_LENGTH}")
+            chunks = chunks[:self.MAX_THREAD_LENGTH]
         
         print(f"[TwitterAdapter] Publishing {len(chunks)} tweets (images={len(images)})...")
         
@@ -44,7 +49,8 @@ class TwitterAdapter(PlatformAdapter):
                 
                 # 봇 감지 방지용 딜레이 (마지막 트윗 제외)
                 if i < len(chunks) - 1:
-                    time.sleep(2)
+                    print(f"[TwitterAdapter] Waiting {self.TWEET_DELAY}s before next tweet...")
+                    time.sleep(self.TWEET_DELAY)
                     
             except Exception as e:
                 print(f"[TwitterAdapter] Failed to publish tweet {i+1}/{len(chunks)}: {e}")
