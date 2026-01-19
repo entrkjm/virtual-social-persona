@@ -33,7 +33,7 @@ class Settings:
     USE_VIRTUAL_SDK = os.getenv("USE_VIRTUAL_SDK", "true").lower() == "true"
     GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID", "vaiv-observatory")
     GCP_LOCATION = os.getenv("GCP_LOCATION", "us-central1")
-    GOOGLE_APPLICATION_CREDENTIALS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "gcp-key.json")
+    GOOGLE_APPLICATION_CREDENTIALS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "keys/project-ai-proc.gcpkey.json")
 
     # Vision & Image Gen
     IMAGEN_MODEL = os.getenv("IMAGEN_MODEL", "imagen-3.0-generate-001")
