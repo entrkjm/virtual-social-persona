@@ -238,7 +238,17 @@ def post_tweet(content: str, reply_to: str = None, media_files: List[str] = None
         target_chars = len(content) * 280 // weighted_len - 3
         content = content[:target_chars] + "..."
     try:
-        tweet_id = asyncio.run(_post_tweet_twikit(content, reply_to, media_files))
+        # Use get_event_loop() to avoid "Event loop is closed" errors
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_closed():
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        tweet_id = loop.run_until_complete(_post_tweet_twikit(content, reply_to, media_files))
         print(f"[TWEET] posted {tweet_id}")
         return str(tweet_id)
     except Exception as e:
