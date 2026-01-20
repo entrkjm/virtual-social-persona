@@ -7,5 +7,5 @@ step_probabilities:
 
 # 실행 시 지연 설정 (Human-like)
 delays:
-  between_steps: [60, 240]     # 스텝 간 대기 시간 (초)
+  between_steps: [45, 180]     # 스텝 간 대기 시간 (초)
   warmup_steps: 5              # 실행 초기 읽기만 하는 스텝 수
