@@ -4,6 +4,7 @@ Behavior Engine
 Probabilistic decision-making with mood & regret
 """
 import yaml
+import os
 import random
 import time
 from datetime import datetime, timedelta
@@ -191,12 +192,45 @@ class BehaviorEngine:
         self.post_comment_history: Dict[str, int] = {}
 
     def _load_config(self, path: str) -> Dict:
+        # 1. Load Core Config
+        core_config = {}
         try:
             with open(path, 'r', encoding='utf-8') as f:
-                return yaml.safe_load(f)
+                core_config = yaml.safe_load(f) or {}
         except FileNotFoundError:
-            print(f"[BEHAVIOR] Config not found: {path}, using defaults")
-            return self._get_default_config()
+            print(f"[BEHAVIOR] Core config not found: {path}, using defaults")
+            core_config = self._get_default_config()
+
+        # 2. Load Platform Specific Config (if applicable)
+        # Assuming path is like personas/{name}/behavior.yaml
+        # We want personas/{name}/platforms/twitter/behavior.yaml
+        platform_config = {}
+        try:
+            # Construct platform path: behavior.yaml -> platforms/twitter/behavior.yaml
+            if 'personas' in path and 'behavior.yaml' in path:
+                # Basic path manipulation
+                base_dir = os.path.dirname(path) # personas/{name}
+                platform_path = os.path.join(base_dir, "platforms", "twitter", "behavior.yaml")
+                
+                if os.path.exists(platform_path):
+                    with open(platform_path, 'r', encoding='utf-8') as f:
+                        platform_config = yaml.safe_load(f) or {}
+                        # print(f"[BEHAVIOR] Loaded platform override: {platform_path}")
+        except Exception as e:
+            print(f"[BEHAVIOR] Failed to load platform config: {e}")
+
+        # 3. Merge (Platform overrides Core)
+        return self._merge_configs(core_config, platform_config)
+
+    def _merge_configs(self, base: Dict, override: Dict) -> Dict:
+        """Deep merge dictionaries"""
+        merged = base.copy()
+        for k, v in override.items():
+            if k in merged and isinstance(merged[k], dict) and isinstance(v, dict):
+                merged[k] = self._merge_configs(merged[k], v)
+            else:
+                merged[k] = v
+        return merged
 
     def _get_default_config(self) -> Dict:
         return {

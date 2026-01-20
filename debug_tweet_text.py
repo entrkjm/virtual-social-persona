@@ -2,7 +2,7 @@ import asyncio
 import os
 import sys
 sys.path.append(os.getcwd())
-from platforms.twitter.social import _post_tweet_twikit, _upload_media_twikit, _get_twikit_client
+from agent.platforms.twitter.api.social import _post_tweet_twikit, _upload_media_twikit, _get_twikit_client
 
 async def test_tweet():
     print("Logged in?")

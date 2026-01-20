@@ -5,12 +5,6 @@
 probability_model:
   base_probability: 0.50       # 기본 확률 (50%)
   
-  # 행동별 반영 비율
-  action_ratios:
-    like: 1.0
-    repost: 0.8
-    comment: 0.6
-
   # 상황별 가산점 (Modifiers)
   modifiers:
     praise: 0.15
@@ -25,30 +19,3 @@ content_review:
   enabled: true
   fix_excessive_patterns: true
   max_pattern_occurrences: 1
-
-# 팔로우 행동 설정
-follow_behavior:
-  enabled: true
-  daily_limit: 100
-  base_probability: 0.5
-  score_threshold: 40
-  delay:
-    min: 30
-    max: 300
-  exclude:
-    no_profile_image: true
-    no_bio: true
-
-# Human-like 행동 패턴 (봇 탐지 회피)
-human_like:
-  warmup:
-    enabled: true
-    steps: 5
-  action_delays:
-    after_like: [2, 5]
-    after_comment: [5, 15]
-    after_post: [30, 120]
-  burst_prevention:
-    enabled: true
-    max_consecutive_actions: 3
-    cooldown_after_burst: 60

@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from config.settings import settings
 from core.llm import llm_client
-from platforms.twitter.social import search_tweets
+from agent.platforms.twitter.api.social import search_tweets
 from agent.persona.persona_loader import active_persona
 
 
@@ -68,12 +68,18 @@ class KnowledgeBase:
 
         try:
             # 1. 데이터가 주입되지 않았으면 Twitter에서 조회 (레거시 호환)
-            if source_data is None:
-                from platforms.twitter.social import search_tweets
-                tweets = search_tweets(keyword, count=5)
-            else:
+            # Fallback to Twitter Search (Mock or Real)
+            try:
+                from agent.platforms.twitter.api.social import search_tweets
+                results = search_tweets(keyword, count=3)
+                if results:
+                    tweets = results
+                else:
+                    tweets = source_data # Fallback to source_data if search_tweets returns nothing
+            except ImportError:
+                # If the specific import fails, use source_data
                 tweets = source_data
-                
+            
             if not tweets:
                 return self._create_minimal_knowledge(keyword, source_platform)
 

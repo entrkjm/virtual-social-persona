@@ -6,9 +6,10 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from platforms.twitter.social import get_my_tweets
-from agent.memory.database import memory_db
-from config.settings import settings
+from datetime import datetime, timedelta
+from agent.memory import agent_memory
+from agent.memory.database import Episode
+from agent.platforms.twitter.api.social import get_my_tweets
 
 
 def backfill_posts(screen_name: str, count: int = 50):

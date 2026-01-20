@@ -1,10 +1,10 @@
 from typing import List, Optional
 from datetime import datetime
 from agent.platforms.interface import SocialPlatformAdapter, SocialPost, SocialUser
-import platforms.twitter.social as twitter_api
+import agent.platforms.twitter.api.social as twitter_api
 
 class TwitterAdapter(SocialPlatformAdapter):
-    """Adapter for Twitter using platforms.twitter.social"""
+    """Adapter for Twitter using agent.platforms.twitter.api.social"""
 
     @staticmethod
     def _parse_date(date_str: str) -> Optional[datetime]:

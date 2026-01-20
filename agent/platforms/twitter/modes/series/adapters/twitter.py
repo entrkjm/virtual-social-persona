@@ -2,10 +2,12 @@
 Platform Adapter Base & Twitter Adapter
 """
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any
+from typing import List, Optional, Dict, Any
 import time
 import random
-from platforms.twitter.social import post_tweet
+from agent.platforms.interface import SocialPlatformAdapter
+from agent.platforms.twitter.api.social import post_tweet
+from datetime import datetime
 
 class PlatformAdapter(ABC):
     @abstractmethod

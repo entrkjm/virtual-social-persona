@@ -2,8 +2,9 @@
 Twitter Trend Learner
 Twitter에서 트렌드 컨텍스트 수집 (플랫폼 종속적)
 """
-from typing import Dict, List, Optional
-from platforms.twitter.social import search_tweets
+from typing import List, Dict
+from agent.memory.database import MemoryDatabase, Episode
+from agent.platforms.twitter.api.social import search_tweets
 
 
 def fetch_trend_context(keyword: str, count: int = 5) -> List[Dict]:
