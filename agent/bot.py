@@ -615,7 +615,7 @@ class SocialAgent:
             print(f"[SCOUT] Best candidate: @{best['post'].user.username} (Score: {best['score']:.2f})")
             
             # [Added] Relevance Cut-off
-            SCORE_THRESHOLD = 0.40
+            SCORE_THRESHOLD = 0.25  # Lowered from 0.40 for more interactions
             if best['score'] < SCORE_THRESHOLD:
                  print(f"[SCOUT] Cut-off REJECTED: Score {best['score']:.2f} < {SCORE_THRESHOLD}")
                  return FunctionResultStatus.DONE, f"Best candidate skipped: Score {best['score']:.2f} below threshold {SCORE_THRESHOLD}", {}
