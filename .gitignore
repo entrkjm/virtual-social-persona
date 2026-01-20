@@ -35,3 +35,9 @@ notes.md
 _archive/
 keys/
 logs/
+
+# Cookie exports
+cookies.json
+*.cookies.json
+twitter_cookies_*.json
+
