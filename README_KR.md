@@ -112,10 +112,6 @@ TWITTER_CT0=your_ct0_token
 2. 개발자 도구 (F12) → Application → Cookies → twitter.com
 3. `auth_token`과 `ct0` 값 복사
 
-또는 헬퍼 스크립트 사용:
-```bash
-python scripts/manage_cookies.py import cookies.json
-```
 
 ---
 
@@ -153,8 +149,7 @@ virtual/
 │   ├── _template/          # 여기서 시작!
 │   └── chef_choi/          # 데모: 최강록 셰프
 │
-├── scripts/
-│   └── manage_cookies.py   # 쿠키 헬퍼
+
 │
 └── docs/                    # 문서
 ```

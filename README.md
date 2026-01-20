@@ -112,10 +112,6 @@ TWITTER_CT0=your_ct0_token
 2. DevTools (F12) → Application → Cookies → twitter.com
 3. Copy `auth_token` and `ct0` values
 
-Or use our helper script:
-```bash
-python scripts/manage_cookies.py import cookies.json
-```
 
 ---
 
@@ -153,8 +149,7 @@ virtual/
 │   ├── _template/          # Start here!
 │   └── chef_choi/          # Demo: Chef Choi
 │
-├── scripts/
-│   └── manage_cookies.py   # Cookie helper
+
 │
 └── docs/                    # Documentation
 ```
