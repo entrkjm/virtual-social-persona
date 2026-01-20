@@ -25,7 +25,7 @@ follow_behavior:
 human_like:
   warmup:
     enabled: true
-    steps: 5
+    steps: 1
   action_delays:
     after_like: [2, 5]
     after_comment: [5, 15]

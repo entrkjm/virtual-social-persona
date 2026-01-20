@@ -38,7 +38,7 @@ MODE_CONFIGS: Dict[AgentMode, ModeConfig] = {
     AgentMode.NORMAL: ModeConfig(
         step_interval_min=60,
         step_interval_max=180,
-        warmup_steps=5,
+        warmup_steps=1,
         sleep_enabled=True,
         random_breaks=True
         # step 확률 None → 페르소나 값 사용
@@ -48,7 +48,7 @@ MODE_CONFIGS: Dict[AgentMode, ModeConfig] = {
     AgentMode.TEST: ModeConfig(
         step_interval_min=15,
         step_interval_max=45,
-        warmup_steps=2,
+        warmup_steps=1,
         sleep_enabled=False,
         random_breaks=False,
         scout_probability=0.75,
