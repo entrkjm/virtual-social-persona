@@ -37,3 +37,22 @@
 
 ## 🧹 Maintenance
 - Cleaned up root directory test scripts (`test_*.py`, `debug_*.py`) -> moved to `_archive/legacy_tests`.
+
+---
+
+## 🚀 Phase 24: Home PC Deployment
+
+### 1. Cookie Management Script
+- **New**: `scripts/manage_cookies.py`
+- Commands: `show`, `import`, `export`
+- Usage: `python scripts/manage_cookies.py import cookies.json`
+
+### 2. Multi-Persona Support
+- **Updated**: `agent/persona/persona_loader.py`
+- `PERSONA_NAME` 환경변수로 페르소나 선택 (config 파일 우선순위 오버라이드)
+- Usage: `PERSONA_NAME=chef_choi python main.py`
+
+### 3. Deployment Decision
+- **결정**: Proxy/Docker/VPN 제외, 집 PC에서 screen으로 3개 봇 운영
+- **이유**: 3개 스케일에서는 오버엔지니어링, 같은 IP에서 독립 활동은 리스크 낮음
+
