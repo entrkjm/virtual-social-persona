@@ -51,15 +51,8 @@ class PersonaLoader:
 
     @staticmethod
     def load_active_persona() -> PersonaConfig:
-        """활성 페르소나 로드"""
-        active_config_path = "config/active_persona.yaml"
-        if not os.path.exists(active_config_path):
-            raise FileNotFoundError(f"Active persona config not found at {active_config_path}")
-            
-        with open(active_config_path, 'r', encoding='utf-8') as f:
-            active_config = yaml.safe_load(f)
-
-        persona_name = active_config['active']
+        """활성 페르소나 로드 (환경변수 또는 config 기반)"""
+        persona_name = get_active_persona_name()
         return PersonaLoader.load_persona(persona_name)
 
     @staticmethod
@@ -213,7 +206,13 @@ class PersonaLoader:
 
 
 def get_active_persona_name() -> str:
-    """활성 페르소나 이름만 반환"""
+    """활성 페르소나 이름 반환 (환경변수 우선, 없으면 config 사용)"""
+    # 1. 환경변수 PERSONA_NAME이 있으면 우선 사용
+    env_persona = os.environ.get('PERSONA_NAME')
+    if env_persona:
+        return env_persona
+    
+    # 2. Fallback: config/active_persona.yaml
     active_config_path = "config/active_persona.yaml"
     with open(active_config_path, 'r', encoding='utf-8') as f:
         active_config = yaml.safe_load(f)
