@@ -1,125 +1,198 @@
-# Virtual Agent
+# Virtual Agent 🤖
 
-Virtuals Protocol G.A.M.E SDK 기반 자율형 트위터 AI 에이전트.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
-## Quick Start
+**Autonomous AI Agent for Social Media** - A human-like Twitter bot powered by LLM intelligence.
+
+[한국어 README](./README_KR.md)
+
+---
+
+## ✨ Features
+
+- 🧠 **3-Layer Intelligence**: Core identity + Learned interests + Real-time trends
+- 💾 **Dynamic Memory**: Experience → Inspiration → Long-term memory (with decay/reinforcement)
+- 🎭 **Human-like Behavior**: Mood fluctuations, fatigue system, personality traits
+- 🔄 **Independent Actions**: Like/Repost/Reply probabilities calculated separately
+- 🔌 **Platform Agnostic**: Adapter pattern for easy platform switching
+- 👥 **Multi-Persona**: Run multiple personas with environment variables
+
+---
+
+## 🚀 Quick Start
 
 ```bash
-# 의존성 설치
+# Clone
+git clone https://github.com/YOUR_USERNAME/virtual.git
+cd virtual
+
+# Install dependencies
 pip install -r requirements.txt
 
-# 환경변수 설정
+# Configure
 cp .env.example .env
-# .env 편집: API 키 입력
+# Edit .env with your API keys
 
-# 실행
+# Run
 python main.py
 ```
 
-## Core Flow
+---
 
-```
-Scout → Perceive → Behavior → Judge → Action → Follow
-```
+## 🔧 Configuration
 
-| Stage | 역할 |
-|-------|------|
-| Scout | 3-Layer 키워드로 트윗 검색 (Core + Curiosity + Trends) |
-| Perceive | LLM으로 트윗 분석 (topics, sentiment, my_angle) |
-| Behavior | 확률 기반 행동 결정 (like 60%, repost 15%, comment 12%) |
-| Judge | LLM으로 댓글 내용 생성 (comment=True일 때) |
-| Action | Twitter API 호출 |
-| Follow | 상호작용 후 점수 기반 팔로우 판단 + 지연 실행 |
+### Required Environment Variables
 
-## Structure
+```env
+# LLM (Choose one)
+GEMINI_API_KEY=your_gemini_key
+# or USE_VERTEX_AI=true with GCP credentials
 
-```
-agent/                    # Brain
-  bot.py                  # 메인 워크플로우
-  core/                   # 플랫폼 독립 로직 (8개 모듈)
-  memory/                 # 메모리 시스템 (DB, Vector, Session)
-  knowledge/              # 지식 시스템
-  persona/                # 페르소나 로딩 및 관리
-  platforms/              # 플랫폼별 구현
-    twitter/              # Twitter 플랫폼
-      modes/              # 실행 모드 (Casual/Social/Series)
-      learning/           # 트렌드 학습
-
-core/                     # Heart
-  llm.py                  # 멀티 LLM (Gemini, OpenAI, Anthropic)
-
-config/                   # Settings
-  active_persona.yaml     # 활성 페르소나 지정
-  personas/               # 페르소나 폴더
-    chef_choi/            # 셰프 최강록
-      identity.yaml       # 핵심 정체성
-      speech_style.yaml   # 말투 패턴
-      mood.yaml           # 기분 및 스케줄
-      core_relationships.yaml # 핵심 관계
-      prompt.txt          # 시스템 프롬프트
-      platforms/          # 플랫폼별 설정
-        twitter/
-          config.yaml     # 플랫폼 제약
-          step_schedule.yaml # 행동 비중
-          modes/          # 모드별 설정 (config.yaml + style.yaml)
-
-data/                     # Runtime Data
-  memory.db               # SQLite (에피소드, 영감, 메모리)
-  chroma/                 # 벡터 임베딩 (시맨틱 검색)
+# Twitter (Cookie-based auth - recommended)
+TWITTER_AUTH_TOKEN=your_auth_token
+TWITTER_CT0=your_ct0_token
 ```
 
-## Key Features
+### Getting Twitter Cookies
 
-- **3-Layer Intelligence**: Core 정체성 + 학습된 관심사 + 실시간 트렌드
-- **Dynamic Memory**: 경험 → 영감 → 장기기억 (감쇠/강화/승격)
-- **Human-like Behavior**: 내향성, 기분 변동, 피로도, 현타 시스템
-- **Independent Actions**: 좋아요/리포스트/댓글 각각 독립 확률
-- **Chat/Post Style**: 답글과 독립 포스팅 스타일 분리
-- **Pattern Management**: 3-Layer 말투 패턴 관리 (signature/frequent/filler/contextual)
-- **Smart Follow**: 점수 기반 팔로우 판단 + 지연 실행 (봇 감지 회피)
-- **SDK Optional**: Virtuals SDK 사용 여부 선택 가능 (USE_VIRTUAL_SDK)
+1. Login to twitter.com in your browser
+2. Open DevTools → Application → Cookies → twitter.com
+3. Copy `auth_token` and `ct0` values
+4. Or use: `python scripts/manage_cookies.py import cookies.json`
 
-## Persona
+---
 
-새 페르소나 추가:
+## 🏗️ Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                        main.py                          │
+│                    (Entry Point)                        │
+└─────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────┐
+│                      SocialAgent                        │
+│                      (bot.py)                           │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐ │
+│  │   Scout     │→ │   Perceive  │→ │   Decide/Act    │ │
+│  │ (Search)    │  │ (LLM Intel) │  │ (Behavior Eng)  │ │
+│  └─────────────┘  └─────────────┘  └─────────────────┘ │
+└─────────────────────────────────────────────────────────┘
+                           │
+           ┌───────────────┼───────────────┐
+           ▼               ▼               ▼
+    ┌───────────┐   ┌───────────┐   ┌───────────┐
+    │  Memory   │   │  Persona  │   │  Platform │
+    │  System   │   │  Loader   │   │  Adapter  │
+    │ (SQLite+  │   │ (YAML)    │   │ (Twitter) │
+    │  Chroma)  │   │           │   │           │
+    └───────────┘   └───────────┘   └───────────┘
+```
+
+---
+
+## 📁 Project Structure
+
+```
+virtual/
+├── agent/                    # Core Agent Logic
+│   ├── bot.py               # Main workflow orchestrator
+│   ├── core/                # Platform-independent modules
+│   ├── memory/              # Memory system (DB, Vector, Session)
+│   ├── persona/             # Persona loading
+│   └── platforms/           # Platform adapters
+│       └── twitter/         # Twitter implementation
+│           ├── adapter.py   # Platform adapter
+│           ├── api/         # API wrapper (twikit)
+│           └── modes/       # Execution modes
+│               ├── casual/  # Independent posting
+│               ├── social/  # Interaction & replies
+│               └── series/  # Themed content series
+│
+├── personas/                # Persona configurations
+│   └── chef_choi/          # Example: Chef persona
+│       ├── identity.yaml   # Core identity
+│       ├── speech_style.yaml
+│       └── platforms/twitter/
+│
+├── core/                    # Shared utilities
+│   └── llm.py              # Multi-LLM client
+│
+├── scripts/                 # Utility scripts
+│   └── manage_cookies.py   # Cookie management CLI
+│
+└── docs/                    # Documentation
+```
+
+---
+
+## 🎭 Multi-Persona Deployment
+
+Run multiple personas on one machine:
+
 ```bash
-cp -r config/personas/_template config/personas/my_persona
-# 파일 수정 후
-# config/active_persona.yaml → active: "my_persona"
+# Terminal 1 - Persona A
+PERSONA_NAME=chef_choi python main.py
+
+# Terminal 2 - Persona B (different Twitter account)
+PERSONA_NAME=client_a \
+TWITTER_AUTH_TOKEN="client_a_token" \
+TWITTER_CT0="client_a_ct0" \
+python main.py
 ```
 
-사용 가능 페르소나 확인:
-```python
-from agent.persona_loader import PersonaLoader
-print(PersonaLoader.list_personas())
+Using `screen` for background:
+```bash
+screen -S chef
+PERSONA_NAME=chef_choi python main.py
+# Ctrl+A, D to detach
+
+screen -ls  # List sessions
+screen -r chef  # Reattach
 ```
 
-## Configuration
+---
+
+## 📊 Execution Modes
+
+| Mode | Description |
+|------|-------------|
+| `normal` | Standard operation with sleep schedules |
+| `test` | Fast iterations, no rate limiting |
+| `aggressive` | Maximum activity, no breaks |
 
 ```bash
-# .env
-GAME_API_KEY=...              # Virtuals Protocol (SDK 모드 시 필수)
-GEMINI_API_KEY=...            # Gemini API
-LLM_PROVIDER=gemini           # gemini | openai | anthropic
-USE_VIRTUAL_SDK=false         # true: SDK 모드, false: Standalone 모드
-
-# Twitter 인증 (둘 중 하나)
-TWITTER_USERNAME=...
-TWITTER_PASSWORD=...
-# 또는
-TWITTER_AUTH_TOKEN=...
-TWITTER_CT0=...
+AGENT_MODE=aggressive python main.py
 ```
 
-## Data
+---
 
-| 경로 | 용도 |
-|------|------|
-| `data/memory.db` | SQLite - 에피소드, 영감, 포스트 기록 |
-| `data/chroma/` | Chroma - 벡터 임베딩 (시맨틱 검색) |
+## 🛡️ Platform Sustainability
 
-## Docs
+This project uses `twikit` (unofficial Twitter library) which may break when Twitter updates their internal API. The codebase is designed with an **Adapter Pattern** to minimize impact:
 
-- [Architecture](./docs/ARCHITECTURE.md) - 전체 아키텍처
-- [Memory System](./docs/MEMORY_SYSTEM_DESIGN.md) - 메모리 시스템 설계
-- [Behavior Config](./docs/BEHAVIOR_CONFIG_GUIDE.md) - 행동 설정 가이드
+- All Twitter-specific code is isolated in `agent/platforms/twitter/`
+- `bot.py` only uses abstract `SocialPlatformAdapter` interface
+- Switching to Playwright or official API requires only adapter changes
+
+---
+
+## 📚 Documentation
+
+- [Deployment Guide](./docs/DEPLOYMENT_STRATEGY.md)
+- [Memory System Design](./docs/MEMORY_SYSTEM_DESIGN.md)
+- [Changelog](./docs/CHANGELOG_20260120.md)
+
+---
+
+## 📄 License
+
+MIT License - See [LICENSE](./LICENSE) for details.
+
+---
+
+## ⚠️ Disclaimer
+
+This project is for educational purposes. Use responsibly and comply with Twitter's Terms of Service. The authors are not responsible for any misuse or account suspensions.
