@@ -70,6 +70,12 @@ class SocialAgent:
         self.post_generator = CasualPostGenerator(self.persona, platform_config)
         self.reply_generator = SocialReplyGenerator(self.persona, social_full_cfg)
         self.full_system_prompt = self.persona.system_prompt
+
+        # Inject mode-specific behavior config into engine
+        social_behavior_cfg = social_mode_cfg.get('behavior', {})
+        if social_behavior_cfg:
+             behavior_engine.update_config(social_behavior_cfg)
+             print(f"[BOT] Behavior engine updated with social mode config")
         
         # Initialize Sub-components with DI
         self.tier_manager = TierManager() # tier_manager might be stateless or need Config? Assuming stateless for now or default

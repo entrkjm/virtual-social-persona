@@ -66,3 +66,16 @@ interaction_patterns:
     allow_multiple_comments: true
     max_comments_per_post: 2
     regret_probability: 0.30
+
+# 행동 제약 규칙 (심리/피로도)
+behavioral_rules:
+  when_tired:
+    threshold_interactions: 50    # 일일 활동 제한 상향 (10 -> 50)
+    probability_multiplier: 0.8   # 지쳐도 어느 정도 활동 유지
+  
+  when_stranger:
+    probability_multiplier: 0.8
+  
+  when_topic_matches_obsession:
+    probability_multiplier: 1.5
+

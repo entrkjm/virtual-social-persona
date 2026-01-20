@@ -280,6 +280,16 @@ class BehaviorEngine:
                 return True
         return False
 
+    def update_config(self, new_config: Dict):
+        """Update behavior configuration dynamically"""
+        if not new_config:
+            return
+        self.config.update(new_config)
+        # Update sub-components if needed
+        global human_like_controller
+        if human_like_controller:
+            human_like_controller.config = self.config.get('human_like', {})
+
     def _get_post_comment_count(self, post_id: str) -> int:
         return self.post_comment_history.get(post_id, 0)
 
@@ -370,7 +380,8 @@ class BehaviorEngine:
 
     def _get_fatigue_factor(self) -> float:
         rules = self.config.get('behavioral_rules', {})
-        threshold = rules.get('when_tired', {}).get('threshold_interactions', 10)
+        # Use threshold from config, with a higher default if not specified
+        threshold = rules.get('when_tired', {}).get('threshold_interactions', 30)
 
         if self.daily_interaction_count >= threshold:
             return rules.get('when_tired', {}).get('probability_multiplier', 0.6)
@@ -560,7 +571,8 @@ class BehaviorEngine:
         user_handle = context.get('tweet', {}).get('user', '')
         post_id = context.get('tweet', {}).get('id', '')
 
-        if self._get_post_comment_count(post_id) >= 2:
+        max_comments = self.config.get('interaction_patterns', {}).get('same_post', {}).get('max_comments_per_post', 2)
+        if self._get_post_comment_count(post_id) >= max_comments:
             return "이미 이 글에 충분히 댓글을 달았음"
 
         if self._check_regret(post_id):
@@ -576,10 +588,14 @@ class BehaviorEngine:
         if self._is_in_cooldown(user_handle):
             return f"@{user_handle}와 대화한 지 얼마 안 됨"
 
-        if self.current_mood < 0.3:
+        if self.current_mood < 0.2: # Lowered threshold for more activity
             return "기분이 좋지 않음... 조용히 있고 싶음"
 
-        if self.daily_interaction_count >= 10:
+        # Use threshold from config instead of hardcoded 10
+        rules = self.config.get('behavioral_rules', {})
+        fatigue_threshold = rules.get('when_tired', {}).get('threshold_interactions', 30)
+        
+        if self.daily_interaction_count >= fatigue_threshold:
             return "오늘 너무 많이 활동함, 지침"
 
         return "그냥... 지나가고 싶음"
