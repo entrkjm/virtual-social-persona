@@ -29,25 +29,45 @@ class TweetData(TypedDict, total=False):
 
 
 
-COOKIES_FILE = os.path.join(settings.DATA_DIR, "twitter_cookies.json")
+def _get_cookies_path() -> str:
+    """
+    현재 활성화된 페르소나에 맞는 쿠키 파일 경로 반환
+    """
+    persona_name = os.getenv("PERSONA_NAME")
+    
+    if persona_name:
+        cookie_dir = os.path.join(settings.DATA_DIR, "cookies")
+        os.makedirs(cookie_dir, exist_ok=True)
+        return os.path.join(cookie_dir, f"{persona_name}_cookies.json")
+
+    return os.path.join(settings.DATA_DIR, "twitter_cookies.json")
 
 # 전역 클라이언트 상태
 
 _client_instance: Optional[Client] = None
 _last_cookie_mtime: float = 0.0
+_current_cookie_path: Optional[str] = None
 
 async def _get_twikit_client() -> Client:
     """
     Twikit 클라이언트 가져오기 (Singleton + Hot Reload)
     쿠키 파일이 변경되면 클라이언트를 새로 생성합니다.
     """
-    global _client_instance, _last_cookie_mtime
+    global _client_instance, _last_cookie_mtime, _current_cookie_path
+
+    cookies_file = _get_cookies_path()
+    
+    # Path changed?
+    if _current_cookie_path != cookies_file:
+         _client_instance = None
+         _current_cookie_path = cookies_file
+         _last_cookie_mtime = 0.0
 
     # 1. 파일 변경 감지
     should_reload = False
-    if os.path.exists(COOKIES_FILE):
+    if os.path.exists(cookies_file):
         try:
-            current_mtime = os.path.getmtime(COOKIES_FILE)
+            current_mtime = os.path.getmtime(cookies_file)
             if current_mtime > _last_cookie_mtime:
                 print(f"[TWITTER] 🍪 쿠키 파일 변경 감지! ({_last_cookie_mtime} -> {current_mtime})")
                 should_reload = True
@@ -57,13 +77,13 @@ async def _get_twikit_client() -> Client:
 
     # 2. 클라이언트 초기화 또는 리로드
     if _client_instance is None or should_reload:
-        print("[TWITTER] 🔄 클라이언트 초기화 중...")
+        print(f"[TWITTER] 🔄 클라이언트 초기화 중... (Path: {os.path.basename(cookies_file)})")
         client = Client('en-US')
         
         # 쿠키 로드 시도
-        if os.path.exists(COOKIES_FILE):
+        if os.path.exists(cookies_file):
             try:
-                client.load_cookies(COOKIES_FILE)
+                client.load_cookies(cookies_file)
                 print(f"[TWITTER] ✅ 쿠키 로드 완료")
             except Exception as e:
                 print(f"[TWITTER] ❌ 쿠키 로드 실패: {e}")
@@ -77,6 +97,7 @@ async def _get_twikit_client() -> Client:
              print("[TWITTER] ✅ 환경변수 쿠키 사용")
         
         _client_instance = client
+        _current_cookie_path = cookies_file
 
     return _client_instance
 
@@ -90,9 +111,10 @@ async def _login_and_save(client: Client):
     if username and password:
         print("[TWITTER] 로그인 시도 (Deprecated)...")
         await client.login(auth_info_1=username, auth_info_2=email, password=password)
-        os.makedirs(os.path.dirname(COOKIES_FILE), exist_ok=True)
-        client.save_cookies(COOKIES_FILE)
-        print(f"[TWITTER] 로그인 성공, 쿠키 저장: {COOKIES_FILE}")
+        cookies_file = _get_cookies_path()
+        os.makedirs(os.path.dirname(cookies_file), exist_ok=True)
+        client.save_cookies(cookies_file)
+        print(f"[TWITTER] 로그인 성공, 쿠키 저장: {cookies_file}")
     else:
         print("[TWITTER] 경고: 로그인 정보 없음, 쿠키 파일에 의존합니다.")
 
@@ -114,8 +136,9 @@ async def _with_retry(func, *args, **kwargs):
     except Exception as e:
         if _is_session_expired(e):
             print(f"[TWITTER] 세션 만료 감지, 재로그인...")
-            if os.path.exists(COOKIES_FILE):
-                os.remove(COOKIES_FILE)
+            cookies_file = _get_cookies_path()
+            if os.path.exists(cookies_file):
+                os.remove(cookies_file)
             return await asyncio.wait_for(func(*args, **kwargs), timeout=15.0)
         raise
 
