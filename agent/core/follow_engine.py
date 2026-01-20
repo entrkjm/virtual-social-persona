@@ -30,10 +30,19 @@ class FollowDecision:
 
 
 class FollowEngine:
-    def __init__(self, config_path: str = None):
-        if config_path is None:
-            config_path = f"personas/{active_persona_name}/behavior.yaml"
-        self.config = self._load_config(config_path)
+    def __init__(self, config: Optional[Dict] = None):
+        if config is None:
+             # Try to find follow configuration in active persona
+             # Priority 1: Twitter Platform Config (Most likely place)
+             if hasattr(active_persona, 'platform_configs'):
+                 twitter_cfg = active_persona.platform_configs.get('twitter', {}).get('behavior', {})
+                 config = twitter_cfg.get('follow_behavior')
+             
+             # Priority 2: Core Behavior (Legacy/Fallback)
+             if not config and hasattr(active_persona, 'behavior'):
+                 config = active_persona.behavior.get('follow_behavior')
+
+        self.config = config if config else self._get_default_config()
         self.daily_count = 0
         self.last_reset_date = datetime.now().date()
         self.follow_queue: List[FollowCandidate] = []
@@ -41,14 +50,7 @@ class FollowEngine:
         self.consecutive_errors = 0
         self.paused_until: Optional[datetime] = None
 
-    def _load_config(self, path: str) -> Dict:
-        try:
-            with open(path, 'r', encoding='utf-8') as f:
-                config = yaml.safe_load(f)
-                return config.get('follow_behavior', self._get_default_config())
-        except FileNotFoundError:
-            print(f"[FOLLOW] Config not found: {path}, using defaults")
-            return self._get_default_config()
+    # _load_config removed as we use in-memory config
 
     def _get_default_config(self) -> Dict:
         return {

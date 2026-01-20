@@ -179,10 +179,30 @@ class HumanLikeController:
 
 
 class BehaviorEngine:
-    def __init__(self, config_path: str = None):
-        if config_path is None:
-            config_path = f"personas/{active_persona_name}/behavior.yaml"
-        self.config = self._load_config(config_path)
+
+    def __init__(self, config: Optional[Dict] = None):
+        if config is None:
+            # 1. Soul (Core Behavior from Identity)
+            core_config = active_persona.behavior if hasattr(active_persona, 'behavior') else {}
+            
+            # 2. Body (Platform Specific Behavior)
+            platform_config = {}
+            if hasattr(active_persona, 'platform_configs'):
+                platform_config = active_persona.platform_configs.get('twitter', {}).get('behavior', {})
+            
+            # 3. Merge: Body overrides Soul
+            config = self._merge_configs(core_config, platform_config)
+            
+            # Fallback legacy load if empty
+            if not config:
+                 config_path = f"personas/{active_persona_name}/platforms/twitter/behavior.yaml"
+                 if os.path.exists(config_path):
+                     try:
+                        with open(config_path, 'r', encoding='utf-8') as f:
+                            config = yaml.safe_load(f)
+                     except: pass
+
+        self.config = config if config else self._get_default_config()
         self.current_mood = self.config.get('interaction_patterns', {}).get(
             'mood_volatility', {}
         ).get('base_mood', 0.5)
@@ -190,38 +210,7 @@ class BehaviorEngine:
         self.last_reset_date = datetime.now().date()
         self.user_interaction_history: Dict[str, List[datetime]] = {}
         self.post_comment_history: Dict[str, int] = {}
-
-    def _load_config(self, path: str) -> Dict:
-        # 1. Load Core Config
-        core_config = {}
-        try:
-            with open(path, 'r', encoding='utf-8') as f:
-                core_config = yaml.safe_load(f) or {}
-        except FileNotFoundError:
-            print(f"[BEHAVIOR] Core config not found: {path}, using defaults")
-            core_config = self._get_default_config()
-
-        # 2. Load Platform Specific Config (if applicable)
-        # Assuming path is like personas/{name}/behavior.yaml
-        # We want personas/{name}/platforms/twitter/behavior.yaml
-        platform_config = {}
-        try:
-            # Construct platform path: behavior.yaml -> platforms/twitter/behavior.yaml
-            if 'personas' in path and 'behavior.yaml' in path:
-                # Basic path manipulation
-                base_dir = os.path.dirname(path) # personas/{name}
-                platform_path = os.path.join(base_dir, "platforms", "twitter", "behavior.yaml")
-                
-                if os.path.exists(platform_path):
-                    with open(platform_path, 'r', encoding='utf-8') as f:
-                        platform_config = yaml.safe_load(f) or {}
-                        print(f"[BEHAVIOR] Loaded platform override: {platform_path}")
-        except Exception as e:
-            print(f"[BEHAVIOR] Failed to load platform config: {e}")
-
-        # 3. Merge (Platform overrides Core)
-        return self._merge_configs(core_config, platform_config)
-
+    
     def _merge_configs(self, base: Dict, override: Dict) -> Dict:
         """Deep merge dictionaries"""
         merged = base.copy()

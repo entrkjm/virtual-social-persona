@@ -614,6 +614,14 @@ class SocialAgent:
             
             print(f"[SCOUT] Best candidate: @{best['post'].user.username} (Score: {best['score']:.2f})")
             
+            # [Added] Relevance Cut-off
+            SCORE_THRESHOLD = 0.40
+            if best['score'] < SCORE_THRESHOLD:
+                 print(f"[SCOUT] Cut-off REJECTED: Score {best['score']:.2f} < {SCORE_THRESHOLD}")
+                 return FunctionResultStatus.DONE, f"Best candidate skipped: Score {best['score']:.2f} below threshold {SCORE_THRESHOLD}", {}
+            else:
+                 print(f"[SCOUT] Cut-off PASSED: Score {best['score']:.2f} >= {SCORE_THRESHOLD}")
+            
             # 행동 결정 (Decision)
             decision = behavior_engine.should_interact(best['context'])
             should_act = (decision.decision == "INTERACT")

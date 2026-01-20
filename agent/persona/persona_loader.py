@@ -118,7 +118,12 @@ class PersonaLoader:
                 engagement_rules = f.read()
 
         # 6. Behavior (Core Engine Logic)
-        behavior = PersonaLoader._read_yaml(os.path.join(persona_dir, "behavior.yaml"))
+        behavior_path = os.path.join(persona_dir, "behavior.yaml")
+        if os.path.exists(behavior_path):
+             behavior = PersonaLoader._read_yaml(behavior_path)
+        else:
+             # Fallback to behavior defined in identity.yaml
+             behavior = identity.get('behavior', {})
 
         # 7. Platform Specifics
         platform_configs = {}
@@ -137,6 +142,9 @@ class PersonaLoader:
                 
                 # step_schedule.yaml
                 p_cfg['schedule'] = PersonaLoader._read_yaml(os.path.join(platform_path, "step_schedule.yaml"))
+
+                # behavior.yaml (platform specific override)
+                p_cfg['behavior'] = PersonaLoader._read_yaml(os.path.join(platform_path, "behavior.yaml"))
                 
                 # modes/
                 modes_dir = os.path.join(platform_path, "modes")
