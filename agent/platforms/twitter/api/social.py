@@ -9,6 +9,19 @@ from twikit import Client
 from config.settings import settings
 
 
+def _run_async(coro):
+    """Run async coroutine with proper event loop handling to avoid 'Event loop is closed' errors"""
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    return loop.run_until_complete(coro)
+
+
 class TweetEngagement(TypedDict, total=False):
     """트윗 engagement 메트릭 (확장 가능)"""
     favorite_count: int
@@ -263,7 +276,7 @@ def search_tweets(query: str, count: int = 5):
     
     # 1차 시도: 원본 쿼리
     try:
-        return asyncio.run(_search_tweets_twikit(query, count))
+        return _run_async(_search_tweets_twikit(query, count))
     except Exception as e:
         print(f"[SEARCH] 1st attempt failed: {e}")
     
@@ -277,7 +290,7 @@ def search_tweets(query: str, count: int = 5):
     if simplified_query != query:
         try:
             print(f"[SEARCH] Retry with simplified: {simplified_query[:50]}...")
-            return asyncio.run(_search_tweets_twikit(simplified_query, count))
+            return _run_async(_search_tweets_twikit(simplified_query, count))
         except Exception as e:
             print(f"[SEARCH] 2nd attempt failed: {e}")
     
@@ -286,7 +299,7 @@ def search_tweets(query: str, count: int = 5):
     keywords_only = simplified_query.split()[0] if simplified_query else query.split()[0]
     try:
         print(f"[SEARCH] Retry with keyword only: {keywords_only}")
-        return asyncio.run(_search_tweets_twikit(keywords_only, count))
+        return _run_async(_search_tweets_twikit(keywords_only, count))
     except Exception as e:
         print(f"[SEARCH] final attempt failed: {e}")
         return []
@@ -303,7 +316,7 @@ async def _favorite_tweet_twikit(tweet_id: str):
 def favorite_tweet(tweet_id: str) -> bool:
     """좋아요 / Like tweet"""
     try:
-        asyncio.run(_favorite_tweet_twikit(tweet_id))
+        _run_async(_favorite_tweet_twikit(tweet_id))
         print(f"[LIKE] {tweet_id}")
         return True
     except Exception as e:
@@ -322,7 +335,7 @@ async def _repost_tweet_twikit(tweet_id: str):
 def repost_tweet(tweet_id: str) -> bool:
     """리포스트 / Retweet"""
     try:
-        asyncio.run(_repost_tweet_twikit(tweet_id))
+        _run_async(_repost_tweet_twikit(tweet_id))
         print(f"[REPOST] {tweet_id}")
         return True
     except Exception as e:
@@ -351,7 +364,7 @@ async def _get_mentions_twikit(count: int = 20):
 def get_mentions(count: int = 20):
     """내 멘션 가져오기 / Get mentions"""
     try:
-        return asyncio.run(_get_mentions_twikit(count))
+        return _run_async(_get_mentions_twikit(count))
     except Exception as e:
         print(f"[MENTIONS] failed: {e}")
         return []
@@ -378,7 +391,7 @@ async def _get_tweet_replies_twikit(tweet_id: str):
 def get_tweet_replies(tweet_id: str):
     """특정 트윗의 답글 가져오기 / Get replies to a tweet"""
     try:
-        return asyncio.run(_get_tweet_replies_twikit(tweet_id))
+        return _run_async(_get_tweet_replies_twikit(tweet_id))
     except Exception as e:
         print(f"[REPLIES] failed: {e}")
         return []
@@ -415,7 +428,7 @@ async def _follow_user_twikit(user_id: str):
 def follow_user(user_id: str) -> bool:
     """유저 팔로우 / Follow user"""
     try:
-        asyncio.run(_follow_user_twikit(user_id))
+        _run_async(_follow_user_twikit(user_id))
         print(f"[FOLLOW] {user_id}")
         return True
     except Exception as e:
@@ -453,7 +466,7 @@ async def _get_user_profile_twikit(user_id: str = None, screen_name: str = None)
 def get_user_profile(user_id: str = None, screen_name: str = None) -> dict:
     """유저 프로필 조회 / Get user profile"""
     try:
-        return asyncio.run(_get_user_profile_twikit(user_id, screen_name))
+        return _run_async(_get_user_profile_twikit(user_id, screen_name))
     except Exception as e:
         print(f"[PROFILE] failed: {e}")
         return {}
@@ -471,7 +484,7 @@ async def _check_is_following_twikit(user_id: str):
 def check_is_following(user_id: str) -> bool:
     """팔로우 여부 확인 / Check if following"""
     try:
-        return asyncio.run(_check_is_following_twikit(user_id))
+        return _run_async(_check_is_following_twikit(user_id))
     except Exception as e:
         print(f"[CHECK_FOLLOW] failed: {e}")
         return False
@@ -504,7 +517,7 @@ async def _get_my_tweets_twikit(screen_name: str, count: int = 50) -> List[dict]
 def get_my_tweets(screen_name: str, count: int = 50) -> List[dict]:
     """내 트윗 목록 조회 (백필용)"""
     try:
-        return asyncio.run(_get_my_tweets_twikit(screen_name, count))
+        return _run_async(_get_my_tweets_twikit(screen_name, count))
     except Exception as e:
         print(f"[MY_TWEETS] failed: {e}")
         return []
@@ -526,7 +539,7 @@ async def _get_trends_twikit(woeid: int = 23424868):
 def get_trends(woeid: int = 23424868) -> List[str]:
     """트렌드 가져오기 (WOEID: 23424868 = South Korea)"""
     try:
-        return asyncio.run(_get_trends_twikit(woeid))
+        return _run_async(_get_trends_twikit(woeid))
     except Exception as e:
         print(f"[TRENDS] failed: {e}")
         return []
@@ -563,7 +576,7 @@ async def _get_new_followers_twikit(screen_name: str, count: int = 20):
 def get_new_followers(screen_name: str, count: int = 20) -> List[dict]:
     """최근 팔로워 조회"""
     try:
-        return asyncio.run(_get_new_followers_twikit(screen_name, count))
+        return _run_async(_get_new_followers_twikit(screen_name, count))
     except Exception as e:
         print(f"[FOLLOWERS] failed: {e}")
         return []
