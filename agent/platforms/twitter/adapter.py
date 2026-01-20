@@ -1,3 +1,4 @@
+import os
 from typing import List, Optional
 from datetime import datetime
 from agent.platforms.interface import SocialPlatformAdapter, SocialPost, SocialUser
