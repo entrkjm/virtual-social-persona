@@ -59,4 +59,4 @@ activity_schedule:
     probability: 0.05
   random_off_day:
     enabled: true
-    probability: 0.10
+    probability: 0.05
