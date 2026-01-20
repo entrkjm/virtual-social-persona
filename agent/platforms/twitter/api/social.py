@@ -202,11 +202,37 @@ def post_tweet(content: str, reply_to: str = None, media_files: List[str] = None
 
 
 def search_tweets(query: str, count: int = 5):
-    """트윗 검색 / Search tweets"""
+    """트윗 검색 / Search tweets (with retry and query simplification)"""
+    import time
+    
+    # 1차 시도: 원본 쿼리
     try:
         return asyncio.run(_search_tweets_twikit(query, count))
     except Exception as e:
-        print(f"[SEARCH] failed: {e}")
+        print(f"[SEARCH] 1st attempt failed: {e}")
+    
+    # 2차 시도: filter 제거
+    time.sleep(1)
+    simplified_query = query
+    for filter_term in ['-filter:links', '-filter:replies', '-filter:retweets']:
+        simplified_query = simplified_query.replace(filter_term, '')
+    simplified_query = ' '.join(simplified_query.split())  # 중복 공백 제거
+    
+    if simplified_query != query:
+        try:
+            print(f"[SEARCH] Retry with simplified: {simplified_query[:50]}...")
+            return asyncio.run(_search_tweets_twikit(simplified_query, count))
+        except Exception as e:
+            print(f"[SEARCH] 2nd attempt failed: {e}")
+    
+    # 3차 시도: 키워드만 (exclusions 제거)
+    time.sleep(1)
+    keywords_only = simplified_query.split()[0] if simplified_query else query.split()[0]
+    try:
+        print(f"[SEARCH] Retry with keyword only: {keywords_only}")
+        return asyncio.run(_search_tweets_twikit(keywords_only, count))
+    except Exception as e:
+        print(f"[SEARCH] final attempt failed: {e}")
         return []
 
 
