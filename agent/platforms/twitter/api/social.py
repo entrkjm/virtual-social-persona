@@ -28,51 +28,74 @@ class TweetData(TypedDict, total=False):
     engagement: TweetEngagement
 
 
+
 COOKIES_FILE = os.path.join(settings.DATA_DIR, "twitter_cookies.json")
 
+# 전역 클라이언트 상태
 
-async def _get_twikit_client():
-    """
-    Twikit 클라이언트 생성
-    """
-    client = Client('en-US')
+_client_instance: Optional[Client] = None
+_last_cookie_mtime: float = 0.0
 
-    # 쿠키 파일 로드 시도
+async def _get_twikit_client() -> Client:
+    """
+    Twikit 클라이언트 가져오기 (Singleton + Hot Reload)
+    쿠키 파일이 변경되면 클라이언트를 새로 생성합니다.
+    """
+    global _client_instance, _last_cookie_mtime
+
+    # 1. 파일 변경 감지
+    should_reload = False
     if os.path.exists(COOKIES_FILE):
         try:
-            client.load_cookies(COOKIES_FILE)
-            return client
-        except Exception as e:
-            print(f"[TWITTER] 쿠키 로드 실패: {e}")
+            current_mtime = os.path.getmtime(COOKIES_FILE)
+            if current_mtime > _last_cookie_mtime:
+                print(f"[TWITTER] 🍪 쿠키 파일 변경 감지! ({_last_cookie_mtime} -> {current_mtime})")
+                should_reload = True
+                _last_cookie_mtime = current_mtime
+        except OSError:
+            pass # 파일 읽기 실패 시 무시
 
-    # 환경변수 쿠키 시도
-    auth_token = os.getenv("TWITTER_AUTH_TOKEN")
-    ct0 = os.getenv("TWITTER_CT0")
-    if auth_token and ct0:
-        client.set_cookies({"auth_token": auth_token, "ct0": ct0})
-        print("[TWITTER] 환경변수 쿠키 사용")
-        return client
+    # 2. 클라이언트 초기화 또는 리로드
+    if _client_instance is None or should_reload:
+        print("[TWITTER] 🔄 클라이언트 초기화 중...")
+        client = Client('en-US')
+        
+        # 쿠키 로드 시도
+        if os.path.exists(COOKIES_FILE):
+            try:
+                client.load_cookies(COOKIES_FILE)
+                print(f"[TWITTER] ✅ 쿠키 로드 완료")
+            except Exception as e:
+                print(f"[TWITTER] ❌ 쿠키 로드 실패: {e}")
+        
+        # 환경변수 폴백 (파일 없을 때만)
+        elif os.getenv("TWITTER_AUTH_TOKEN") and os.getenv("TWITTER_CT0"):
+             client.set_cookies({
+                 "auth_token": os.getenv("TWITTER_AUTH_TOKEN"),
+                 "ct0": os.getenv("TWITTER_CT0")
+             })
+             print("[TWITTER] ✅ 환경변수 쿠키 사용")
+        
+        _client_instance = client
 
-    # 로그인
-    await _login_and_save(client)
-    return client
-
+    return _client_instance
 
 async def _login_and_save(client: Client):
-    """로그인 후 쿠키 저장"""
+    """(Deprecated in Hot Reload Mode) 로그인 후 쿠키 저장"""
+    # ... (기존 로직 유지하되, 핫리로딩 환경에서는 외부 주입을 권장)
     username = os.getenv("TWITTER_USERNAME")
     email = os.getenv("TWITTER_EMAIL")
     password = os.getenv("TWITTER_PASSWORD")
 
-    if not (username and password):
-        raise ValueError("Twitter credentials missing in .env")
+    if username and password:
+        print("[TWITTER] 로그인 시도 (Deprecated)...")
+        await client.login(auth_info_1=username, auth_info_2=email, password=password)
+        os.makedirs(os.path.dirname(COOKIES_FILE), exist_ok=True)
+        client.save_cookies(COOKIES_FILE)
+        print(f"[TWITTER] 로그인 성공, 쿠키 저장: {COOKIES_FILE}")
+    else:
+        print("[TWITTER] 경고: 로그인 정보 없음, 쿠키 파일에 의존합니다.")
 
-    print("[TWITTER] 로그인 시도...")
-    await client.login(auth_info_1=username, auth_info_2=email, password=password)
-
-    os.makedirs(os.path.dirname(COOKIES_FILE), exist_ok=True)
-    client.save_cookies(COOKIES_FILE)
-    print(f"[TWITTER] 로그인 성공, 쿠키 저장: {COOKIES_FILE}")
 
 
 def _is_session_expired(error: Exception) -> bool:
