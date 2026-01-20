@@ -251,17 +251,7 @@ def post_tweet(content: str, reply_to: str = None, media_files: List[str] = None
         target_chars = len(content) * 280 // weighted_len - 3
         content = content[:target_chars] + "..."
     try:
-        # Use get_event_loop() to avoid "Event loop is closed" errors
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_closed():
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        
-        tweet_id = loop.run_until_complete(_post_tweet_twikit(content, reply_to, media_files))
+        tweet_id = _run_async(_post_tweet_twikit(content, reply_to, media_files))
         print(f"[TWEET] posted {tweet_id}")
         return str(tweet_id)
     except Exception as e:
@@ -281,7 +271,8 @@ def search_tweets(query: str, count: int = 5):
         print(f"[SEARCH] 1st attempt failed: {e}")
     
     # 2차 시도: filter 제거
-    time.sleep(1)
+    import random
+    time.sleep(random.uniform(2, 5))
     simplified_query = query
     for filter_term in ['-filter:links', '-filter:replies', '-filter:retweets']:
         simplified_query = simplified_query.replace(filter_term, '')
@@ -295,7 +286,7 @@ def search_tweets(query: str, count: int = 5):
             print(f"[SEARCH] 2nd attempt failed: {e}")
     
     # 3차 시도: 키워드만 (exclusions 제거)
-    time.sleep(1)
+    time.sleep(random.uniform(2, 5))
     keywords_only = simplified_query.split()[0] if simplified_query else query.split()[0]
     try:
         print(f"[SEARCH] Retry with keyword only: {keywords_only}")
