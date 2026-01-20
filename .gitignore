@@ -41,3 +41,5 @@ cookies.json
 *.cookies.json
 twitter_cookies_*.json
 
+scripts/refresh_session.py
+ops/
