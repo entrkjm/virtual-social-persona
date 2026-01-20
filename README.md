@@ -1,22 +1,41 @@
-# Virtual Agent 🤖
+# 🤖 Virtual Agent - AI Persona Framework
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
-**Autonomous AI Agent for Social Media** - A human-like Twitter bot powered by LLM intelligence.
+**Create your own AI personality for Twitter.** Build autonomous social media agents with unique personas, memories, and human-like behaviors.
 
 [한국어 README](./README_KR.md)
 
 ---
 
+## 🎯 What is This?
+
+A framework for creating **AI personas** that can:
+- 🐦 Post original content on Twitter
+- 💬 Reply to others with personality
+- 🧠 Remember past interactions
+- 😊 Express moods and emotions
+- 📈 Learn from trending topics
+
+### 🍳 Demo Persona: Chef Choi
+
+Inspired by Korean cooking show "흑백요리사" (Culinary Class Wars), we include **Chef Choi** as a working example.
+
+> **See it live**: [@ChoigangrokV](https://twitter.com/ChoigangrokV)
+
+---
+
 ## ✨ Features
 
-- 🧠 **3-Layer Intelligence**: Core identity + Learned interests + Real-time trends
-- 💾 **Dynamic Memory**: Experience → Inspiration → Long-term memory (with decay/reinforcement)
-- 🎭 **Human-like Behavior**: Mood fluctuations, fatigue system, personality traits
-- 🔄 **Independent Actions**: Like/Repost/Reply probabilities calculated separately
-- 🔌 **Platform Agnostic**: Adapter pattern for easy platform switching
-- 👥 **Multi-Persona**: Run multiple personas with environment variables
+| Feature | Description |
+|---------|-------------|
+| 🎭 **Multi-Persona** | Swap personalities via YAML config |
+| 🧠 **3-Layer Intelligence** | Core identity + Learned interests + Real-time trends |
+| 💾 **Dynamic Memory** | Experiences become inspirations, then long-term memories |
+| � **Human-like Behavior** | Mood swings, fatigue, personality quirks |
+| 🔌 **Platform Agnostic** | Adapter pattern for easy platform switching |
+| � **Independent Actions** | Like/Repost/Reply calculated separately |
 
 ---
 
@@ -27,15 +46,49 @@
 git clone https://github.com/YOUR_USERNAME/virtual.git
 cd virtual
 
-# Install dependencies
+# Install
 pip install -r requirements.txt
 
 # Configure
 cp .env.example .env
-# Edit .env with your API keys
+# Edit .env with your API keys (see Configuration below)
 
-# Run
+# Run demo persona (Chef Choi)
 python main.py
+
+# Or run your own persona
+PERSONA_NAME=my_persona python main.py
+```
+
+---
+
+## 🎨 Create Your Own Persona
+
+```bash
+# 1. Copy template
+cp -r personas/_template personas/my_persona
+
+# 2. Edit identity
+nano personas/my_persona/identity.yaml
+```
+
+**identity.yaml** example:
+```yaml
+name: "My Bot"
+role: "A friendly AI assistant"
+personality:
+  - curious
+  - helpful
+  - witty
+core_topics:
+  - technology
+  - productivity
+  - AI trends
+```
+
+```bash
+# 3. Run it!
+PERSONA_NAME=my_persona python main.py
 ```
 
 ---
@@ -45,11 +98,10 @@ python main.py
 ### Required Environment Variables
 
 ```env
-# LLM (Choose one)
+# LLM (Gemini recommended)
 GEMINI_API_KEY=your_gemini_key
-# or USE_VERTEX_AI=true with GCP credentials
 
-# Twitter (Cookie-based auth - recommended)
+# Twitter Authentication (Cookie-based)
 TWITTER_AUTH_TOKEN=your_auth_token
 TWITTER_CT0=your_ct0_token
 ```
@@ -57,9 +109,13 @@ TWITTER_CT0=your_ct0_token
 ### Getting Twitter Cookies
 
 1. Login to twitter.com in your browser
-2. Open DevTools → Application → Cookies → twitter.com
+2. DevTools (F12) → Application → Cookies → twitter.com
 3. Copy `auth_token` and `ct0` values
-4. Or use: `python scripts/manage_cookies.py import cookies.json`
+
+Or use our helper script:
+```bash
+python scripts/manage_cookies.py import cookies.json
+```
 
 ---
 
@@ -67,27 +123,18 @@ TWITTER_CT0=your_ct0_token
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                        main.py                          │
-│                    (Entry Point)                        │
-└─────────────────────────────────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────┐
 │                      SocialAgent                        │
-│                      (bot.py)                           │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐ │
 │  │   Scout     │→ │   Perceive  │→ │   Decide/Act    │ │
 │  │ (Search)    │  │ (LLM Intel) │  │ (Behavior Eng)  │ │
 │  └─────────────┘  └─────────────┘  └─────────────────┘ │
 └─────────────────────────────────────────────────────────┘
-                           │
-           ┌───────────────┼───────────────┐
+           │               │               │
            ▼               ▼               ▼
     ┌───────────┐   ┌───────────┐   ┌───────────┐
     │  Memory   │   │  Persona  │   │  Platform │
-    │  System   │   │  Loader   │   │  Adapter  │
-    │ (SQLite+  │   │ (YAML)    │   │ (Twitter) │
-    │  Chroma)  │   │           │   │           │
+    │ (SQLite+  │   │  (YAML)   │   │ (Twitter) │
+    │  Vector)  │   │           │   │           │
     └───────────┘   └───────────┘   └───────────┘
 ```
 
@@ -97,31 +144,17 @@ TWITTER_CT0=your_ct0_token
 
 ```
 virtual/
-├── agent/                    # Core Agent Logic
-│   ├── bot.py               # Main workflow orchestrator
-│   ├── core/                # Platform-independent modules
-│   ├── memory/              # Memory system (DB, Vector, Session)
-│   ├── persona/             # Persona loading
-│   └── platforms/           # Platform adapters
-│       └── twitter/         # Twitter implementation
-│           ├── adapter.py   # Platform adapter
-│           ├── api/         # API wrapper (twikit)
-│           └── modes/       # Execution modes
-│               ├── casual/  # Independent posting
-│               ├── social/  # Interaction & replies
-│               └── series/  # Themed content series
+├── agent/                    # Core agent logic
+│   ├── bot.py               # Main workflow
+│   ├── memory/              # Memory system
+│   └── platforms/twitter/   # Twitter adapter
 │
-├── personas/                # Persona configurations
-│   └── chef_choi/          # Example: Chef persona
-│       ├── identity.yaml   # Core identity
-│       ├── speech_style.yaml
-│       └── platforms/twitter/
+├── personas/                # 🎭 Persona configs
+│   ├── _template/          # Start here!
+│   └── chef_choi/          # Demo: Chef Choi
 │
-├── core/                    # Shared utilities
-│   └── llm.py              # Multi-LLM client
-│
-├── scripts/                 # Utility scripts
-│   └── manage_cookies.py   # Cookie management CLI
+├── scripts/
+│   └── manage_cookies.py   # Cookie helper
 │
 └── docs/                    # Documentation
 ```
@@ -133,24 +166,14 @@ virtual/
 Run multiple personas on one machine:
 
 ```bash
-# Terminal 1 - Persona A
+# Terminal 1
 PERSONA_NAME=chef_choi python main.py
 
-# Terminal 2 - Persona B (different Twitter account)
-PERSONA_NAME=client_a \
-TWITTER_AUTH_TOKEN="client_a_token" \
-TWITTER_CT0="client_a_ct0" \
+# Terminal 2 (different Twitter account)
+PERSONA_NAME=my_bot \
+TWITTER_AUTH_TOKEN="other_token" \
+TWITTER_CT0="other_ct0" \
 python main.py
-```
-
-Using `screen` for background:
-```bash
-screen -S chef
-PERSONA_NAME=chef_choi python main.py
-# Ctrl+A, D to detach
-
-screen -ls  # List sessions
-screen -r chef  # Reattach
 ```
 
 ---
@@ -159,8 +182,7 @@ screen -r chef  # Reattach
 
 | Mode | Description |
 |------|-------------|
-| `normal` | Standard operation with sleep schedules |
-| `test` | Fast iterations, no rate limiting |
+| `normal` | Standard with sleep schedules |
 | `aggressive` | Maximum activity, no breaks |
 
 ```bash
@@ -169,30 +191,36 @@ AGENT_MODE=aggressive python main.py
 
 ---
 
-## 🛡️ Platform Sustainability
+## ⚠️ Platform Notice
 
-This project uses `twikit` (unofficial Twitter library) which may break when Twitter updates their internal API. The codebase is designed with an **Adapter Pattern** to minimize impact:
-
-- All Twitter-specific code is isolated in `agent/platforms/twitter/`
-- `bot.py` only uses abstract `SocialPlatformAdapter` interface
-- Switching to Playwright or official API requires only adapter changes
+This project uses `twikit` (unofficial Twitter library). If Twitter updates their internal API, it may break. The codebase uses an **Adapter Pattern** to minimize impact - switching to Playwright or official API requires only adapter changes.
 
 ---
 
 ## 📚 Documentation
 
 - [Deployment Guide](./docs/DEPLOYMENT_STRATEGY.md)
-- [Memory System Design](./docs/MEMORY_SYSTEM_DESIGN.md)
+- [Memory System](./docs/MEMORY_SYSTEM_DESIGN.md)
 - [Changelog](./docs/CHANGELOG_20260120.md)
+
+---
+
+## 🤝 Contributing
+
+1. Fork this repo
+2. Create your persona in `personas/`
+3. Share your config (if you want!)
 
 ---
 
 ## 📄 License
 
-MIT License - See [LICENSE](./LICENSE) for details.
+MIT License - See [LICENSE](./LICENSE)
 
 ---
 
 ## ⚠️ Disclaimer
 
 This project is for educational purposes. Use responsibly and comply with Twitter's Terms of Service. The authors are not responsible for any misuse or account suspensions.
+
+**Chef Choi persona** is a fan-made tribute inspired by Korean TV show "흑백요리사". No copyright infringement intended.
