@@ -31,7 +31,7 @@ class FollowDecision:
 class FollowEngine:
     def __init__(self, config_path: str = None):
         if config_path is None:
-            config_path = f"personas/{active_persona_name}/behavior.yaml"
+            config_path = f"personas/{active_persona_name}/platforms/twitter/modes/social/config.yaml"
         self.config = self._load_config(config_path)
         self.daily_count = 0
         self.last_reset_date = datetime.now().date()
@@ -62,6 +62,7 @@ class FollowEngine:
             'exclude': {
                 'no_profile_image': True,
                 'no_bio': True,
+                'min_bio_length': 5,
                 'follower_ratio_below': 0.1,
                 'account_age_days_below': 30,
                 'following_above': 5000
@@ -69,6 +70,18 @@ class FollowEngine:
             'priority': {
                 'follows_me': True,
                 'bio_keywords': active_persona.domain.keywords if active_persona.domain else []
+            },
+            'scoring': {
+                'base_score': 50,
+                'follows_me_bonus': 30,
+                'keyword_bonus': 10,
+                'interaction_multiplier': 5,
+                'interaction_cap': 20,
+                'follower_tiers': [
+                    {'min': 100, 'max': 10000, 'bonus': 10},
+                    {'min': 10001, 'max': None, 'bonus': 5}
+                ],
+                'profile_bonus': 5
             },
             'rate_limit': {
                 'max_consecutive': 3,
@@ -150,37 +163,52 @@ class FollowEngine:
 
     def _calculate_score(self, user: Dict, context: Dict) -> float:
         """팔로우 점수 계산 (0-100)"""
-        score = 50.0
+        scoring = self.config.get('scoring', {})
         priority = self.config.get('priority', {})
+
+        score = scoring.get('base_score', 50)
 
         # 맞팔 여부
         if priority.get('follows_me', True) and user.get('following_me', False):
-            score += 30
+            score += scoring.get('follows_me_bonus', 30)
 
         # 바이오 키워드 매칭
         bio_keywords = priority.get('bio_keywords', [])
         bio = user.get('bio', user.get('description', '')).lower()
+        keyword_bonus = scoring.get('keyword_bonus', 10)
         for keyword in bio_keywords:
             if keyword.lower() in bio:
-                score += 10
+                score += keyword_bonus
 
         # 상호작용 이력
         interaction_count = context.get('interaction_count', 0)
         if interaction_count > 0:
-            score += min(interaction_count * 5, 20)
+            multiplier = scoring.get('interaction_multiplier', 5)
+            cap = scoring.get('interaction_cap', 20)
+            score += min(interaction_count * multiplier, cap)
 
-        # 팔로워 수 (적당히 있으면 +)
+        # 팔로워 수 (티어 기반)
         followers = user.get('followers_count', 0)
-        if 100 <= followers <= 10000:
-            score += 10
-        elif followers > 10000:
-            score += 5
+        follower_tiers = scoring.get('follower_tiers', [
+            {'min': 100, 'max': 10000, 'bonus': 10},
+            {'min': 10001, 'max': None, 'bonus': 5}
+        ])
+        for tier in follower_tiers:
+            tier_min = tier.get('min', 0)
+            tier_max = tier.get('max')
+            if tier_max is None:
+                if followers >= tier_min:
+                    score += tier.get('bonus', 0)
+            elif tier_min <= followers <= tier_max:
+                score += tier.get('bonus', 0)
+                break
 
         # 계정 품질 (프로필 완성도)
+        profile_bonus = scoring.get('profile_bonus', 5)
         if user.get('profile_image') and 'default' not in str(user.get('profile_image', '')).lower():
-            score += 5
+            score += profile_bonus
         if user.get('bio', user.get('description', '')):
-            score += 5
+            score += profile_bonus
 
         return min(100, max(0, score))
 

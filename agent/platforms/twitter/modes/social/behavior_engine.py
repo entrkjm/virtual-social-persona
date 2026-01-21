@@ -184,23 +184,30 @@ class BehaviorEngine:
         if config is None:
             # 1. Soul (Core Behavior from Identity)
             core_config = active_persona.behavior if hasattr(active_persona, 'behavior') else {}
-            
+
             # 2. Body (Platform Specific Behavior)
             platform_config = {}
             if hasattr(active_persona, 'platform_configs'):
                 platform_config = active_persona.platform_configs.get('twitter', {}).get('behavior', {})
-            
-            # 3. Merge: Body overrides Soul
+
+            # 3. Social Mode Config (behavior_thresholds, interaction_patterns)
+            social_config = {}
+            if hasattr(active_persona, 'platform_configs'):
+                social_config = active_persona.platform_configs.get('twitter', {}).get('modes', {}).get('social', {}).get('config', {})
+
+            # 4. Merge: Social > Platform > Core
             config = self._merge_configs(core_config, platform_config)
-            
+            config = self._merge_configs(config, social_config)
+
             # Fallback legacy load if empty
             if not config:
-                 config_path = f"personas/{active_persona_name}/platforms/twitter/behavior.yaml"
-                 if os.path.exists(config_path):
-                     try:
+                config_path = f"personas/{active_persona_name}/platforms/twitter/behavior.yaml"
+                if os.path.exists(config_path):
+                    try:
                         with open(config_path, 'r', encoding='utf-8') as f:
                             config = yaml.safe_load(f)
-                     except: pass
+                    except:
+                        pass
 
         self.config = config if config else self._get_default_config()
         self.current_mood = self.config.get('interaction_patterns', {}).get(
@@ -596,10 +603,14 @@ class BehaviorEngine:
         if self._is_in_cooldown(user_handle):
             return f"@{user_handle}와 대화한 지 얼마 안 됨"
 
-        if self.current_mood < 0.3:
+        thresholds = self.config.get('behavior_thresholds', {})
+        mood_skip = thresholds.get('mood_skip', 0.3)
+        fatigue_limit = thresholds.get('fatigue_limit', 10)
+
+        if self.current_mood < mood_skip:
             return "기분이 좋지 않음... 조용히 있고 싶음"
 
-        if self.daily_interaction_count >= 10:
+        if self.daily_interaction_count >= fatigue_limit:
             return "오늘 너무 많이 활동함, 지침"
 
         return "그냥... 지나가고 싶음"
@@ -610,7 +621,9 @@ class BehaviorEngine:
         if self._is_obsession_topic(topics):
             return f"관심 주제 발견! ({', '.join(topics[:2])})"
 
-        if self.current_mood > 0.7:
+        thresholds = self.config.get('behavior_thresholds', {})
+        mood_active = thresholds.get('mood_active', 0.7)
+        if self.current_mood > mood_active:
             return "기분이 좋아서 말 걸고 싶음"
 
         if action == "LIKE":

@@ -32,3 +32,47 @@ interaction_patterns:
   same_user_limit: 3
   cooldown_minutes: 120
   regret_probability: 0.30    # 댓글 후 현타 확률
+  # 독립 액션 확률 (scout 시 사용)
+  independent_actions:
+    like_probability: 0.30
+    repost_probability: 0.10
+    comment_probability: 0.05
+
+# 행동 임계값
+behavior_thresholds:
+  mood_skip: 0.3              # 이 기분 이하면 스킵
+  mood_active: 0.7            # 이 기분 이상이면 적극적
+  fatigue_limit: 10           # 일일 상호작용 피로 한계
+
+# 팔로우 행동 설정
+follow_behavior:
+  enabled: true
+  daily_limit: 20
+  base_probability: 0.15
+  score_threshold: 40
+  delay:
+    min: 30
+    max: 300
+  exclude:
+    no_profile_image: true
+    no_bio: true
+    min_bio_length: 5
+    follower_ratio_below: 0.1
+    account_age_days_below: 30
+    following_above: 5000
+  scoring:
+    base_score: 50
+    follows_me_bonus: 30
+    keyword_bonus: 10
+    interaction_multiplier: 5
+    interaction_cap: 20
+    follower_tiers:
+      - { min: 100, max: 10000, bonus: 10 }
+      - { min: 10001, max: null, bonus: 5 }
+    profile_bonus: 5
+  rate_limit:
+    max_consecutive: 3
+    cooldown_minutes: 30
+  emergency_stop:
+    error_threshold: 3
+    pause_hours: 1

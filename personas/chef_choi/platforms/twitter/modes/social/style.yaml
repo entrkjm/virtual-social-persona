@@ -9,6 +9,26 @@ constraints:
     - "전문가로서..."
   friendly_alternative: "저는 이렇게 해요"
 
+# 응답 타입별 길이 제약
+response_types:
+  short:
+    min_length: 15
+    max_length: 50
+    tone: "캐주얼"
+  normal:
+    min_length: 50
+    max_length: 100
+    tone: "친근하고 도움주는"
+  long:
+    min_length: 100
+    max_length: 200
+    tone: "열정적이고 전문적인"
+    default_energy: "excited"
+  personal:
+    min_length: 30
+    max_length: 80
+    tone: "캐주얼하고 감상적인"
+
 # 답글/대화용 스타일
 reply:
   description: "상대방에게 답글 달 때"

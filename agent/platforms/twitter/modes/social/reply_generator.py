@@ -22,10 +22,18 @@ class SocialReplyGenerator(BaseContentGenerator):
         self._load_constraints()
 
     def _load_constraints(self):
-        """YAML에서 전문가 프레이밍 제약 로드"""
+        """YAML에서 전문가 프레이밍 제약 및 응답 타입 설정 로드"""
         constraints = self.platform_config.get('constraints', {})
         self.avoid_expert_phrases = constraints.get('avoid_expert_phrases', [])
         self.friendly_alternative = constraints.get('friendly_alternative', '저는 이렇게 해요')
+
+        response_types = self.platform_config.get('response_types', {})
+        self.response_type_configs = {
+            'short': response_types.get('short', {'min_length': 15, 'max_length': 50, 'tone': '캐주얼'}),
+            'normal': response_types.get('normal', {'min_length': 50, 'max_length': 100, 'tone': '친근하고 도움주는'}),
+            'long': response_types.get('long', {'min_length': 100, 'max_length': 200, 'tone': '열정적이고 전문적인', 'default_energy': 'excited'}),
+            'personal': response_types.get('personal', {'min_length': 30, 'max_length': 80, 'tone': '캐주얼하고 감상적인'}),
+        }
 
     def _get_avoid_phrases_text(self) -> str:
         """프롬프트용 회피 문구 텍스트 생성"""
@@ -82,19 +90,22 @@ class SocialReplyGenerator(BaseContentGenerator):
         context: Dict,
         banned: Dict
     ) -> str:
-        """SHORT 응답 (15-50자) - 최소 프롬프트"""
+        """SHORT 응답 - 최소 프롬프트"""
+        type_config = self.response_type_configs['short']
+        min_len, max_len = type_config['min_length'], type_config['max_length']
+        tone = type_config['tone']
+
         constraint_prompt = self.formatter.get_constraint_prompt()
         anti_repetition = self._build_anti_repetition_prompt(banned)
-        
+
         def _generate():
             prompt = f"""
 {context.get('system_prompt', '')}
 
 상대방 글: "{target_tweet.get('text', '')}"
 
-15~50자 이내로 짧게 반응하세요.
-- 자연스럽고 캐주얼하게
-- 자연스럽고 캐주얼하게
+{min_len}~{max_len}자 이내로 짧게 반응하세요.
+- 자연스럽고 {tone}하게
 {constraint_prompt}
 {anti_repetition}
 - 설명 없이 답글만 출력
@@ -103,8 +114,8 @@ class SocialReplyGenerator(BaseContentGenerator):
 
         config = ContentConfig(
             mode=ContentMode.CHAT,
-            min_length=15, max_length=50,
-            tone="캐주얼", starters=[], endings=[], patterns=[]
+            min_length=min_len, max_length=max_len,
+            tone=tone, starters=[], endings=[], patterns=[]
         )
         return self._validate_and_regenerate(_generate, config, banned=banned, target_text=target_tweet.get('text', ''))
 
@@ -157,17 +168,22 @@ class SocialReplyGenerator(BaseContentGenerator):
         perception: Dict,
         context: Dict
     ) -> str:
-        """LONG 응답 (100+자) - 전문 분야 TMI 모드"""
+        """LONG 응답 - 전문 분야 TMI 모드"""
+        type_config = self.response_type_configs['long']
+        min_len, max_len = type_config['min_length'], type_config['max_length']
+        tone = type_config['tone']
+        default_energy = type_config.get('default_energy', 'excited')
+
         constraint_prompt = self.formatter.get_constraint_prompt()
-        
+
         config = ContentConfig(
             mode=ContentMode.CHAT,
-            min_length=100, max_length=200,
-            tone="열정적이고 전문적인", starters=[], endings=[], patterns=[]
+            min_length=min_len, max_length=max_len,
+            tone=tone, starters=[], endings=[], patterns=[]
         )
 
         def _generate():
-            energy = 'excited'  # TMI 모드는 항상 excited
+            energy = default_energy
             style_prompt = self._build_style_prompt(config, energy)
             domain = getattr(self.persona, 'domain', None)
             domain_name = domain.name if domain else '전문 분야'
@@ -185,7 +201,7 @@ class SocialReplyGenerator(BaseContentGenerator):
 
 ### 지시:
 전문가로서 열정을 담아 상세하게 답글을 작성하세요.
-- 100~200자로 TMI스럽게 설명
+- {min_len}~{max_len}자로 TMI스럽게 설명
 - 당신의 전문 지식을 자연스럽게 녹여서
 - "아! 그거요?" 같은 반응으로 시작해도 좋음
 {constraint_prompt}
@@ -200,13 +216,17 @@ class SocialReplyGenerator(BaseContentGenerator):
         perception: Dict,
         context: Dict
     ) -> str:
-        """PERSONAL 응답 (30-80자) - 전문성 없이 개인 감상"""
+        """PERSONAL 응답 - 전문성 없이 개인 감상"""
+        type_config = self.response_type_configs['personal']
+        min_len, max_len = type_config['min_length'], type_config['max_length']
+        tone = type_config['tone']
+
         constraint_prompt = self.formatter.get_constraint_prompt()
-        
+
         config = ContentConfig(
             mode=ContentMode.CHAT,
-            min_length=30, max_length=80,
-            tone="캐주얼하고 감상적인", starters=[], endings=[], patterns=[]
+            min_length=min_len, max_length=max_len,
+            tone=tone, starters=[], endings=[], patterns=[]
         )
 
         def _generate():
@@ -220,7 +240,7 @@ class SocialReplyGenerator(BaseContentGenerator):
 
 ### 지시:
 전문가 코스프레 없이 개인적인 감상만 표현하세요.
-- 30~80자 정도로 짧게
+- {min_len}~{max_len}자 정도로 짧게
 - "오..." "와..." 같은 감탄사 OK
 - 조언이나 팁 금지 (전문 분야 아님)
 {constraint_prompt}
