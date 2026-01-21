@@ -11,7 +11,7 @@ from ..base import BaseScenario, ScenarioResult, ScenarioContext
 from agent.memory.database import MemoryDatabase
 from agent.platforms.twitter.api.social import NotificationData
 from agent.platforms.twitter.api import social as twitter_api
-from agent.platforms.twitter.modes.social.follow_engine import FollowEngine, FollowDecision
+from ...follow_engine import FollowEngine, FollowDecision
 
 
 class NewFollowerScenario(BaseScenario):

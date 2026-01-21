@@ -9,7 +9,7 @@ from core.llm import llm_client
 from agent.core.base_generator import BaseContentGenerator, ContentConfig, ContentMode
 from agent.core.interaction_intelligence import ResponseType
 from agent.platforms.twitter.formatter import TwitterFormatter
-from agent.platforms.twitter.modes.social.reviewer import SocialReplyReviewer
+from agent.platforms.twitter.modes.social_legacy.reviewer import SocialReplyReviewer
 
 
 class SocialReplyGenerator(BaseContentGenerator):

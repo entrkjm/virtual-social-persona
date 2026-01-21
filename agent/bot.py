@@ -15,7 +15,7 @@ from agent.core.interaction_intelligence import interaction_intelligence
 from agent.core.behavior_engine import behavior_engine, human_like_controller
 from agent.core.follow_engine import follow_engine
 from agent.platforms.twitter.modes.casual.post_generator import CasualPostGenerator
-from agent.platforms.twitter.modes.social.reply_generator import SocialReplyGenerator
+from agent.platforms.twitter.modes.social_legacy.reply_generator import SocialReplyGenerator
 from typing import Tuple, Dict, Any, Optional, List
 from datetime import datetime
 import random
@@ -601,7 +601,7 @@ class SocialAgent:
                 }
 
                 # 2. 점수 계산 (Scoring)
-                from agent.platforms.twitter.modes.social.behavior_engine import behavior_engine
+                from agent.platforms.twitter.modes.social_legacy.behavior_engine import behavior_engine
                 score = behavior_engine.calculate_interaction_score(context)
                 
                 # 후보군 등록
