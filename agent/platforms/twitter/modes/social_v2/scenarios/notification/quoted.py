@@ -7,7 +7,10 @@ Quoted Scenario
 from typing import Optional, Dict, Any
 
 from ..base import BaseScenario, ScenarioResult, ScenarioContext
+from agent.memory.database import MemoryDatabase
 from agent.platforms.twitter.api.social import NotificationData
+from agent.platforms.twitter.api import social as twitter_api
+from ...judgment import EngagementJudge, ReplyGenerator
 
 
 class QuotedScenario(BaseScenario):
@@ -18,6 +21,11 @@ class QuotedScenario(BaseScenario):
     1. 긍정적 인용인가 부정적 인용인가?
     2. 대화에 참여할 필요가 있는가?
     """
+
+    def __init__(self, memory_db: MemoryDatabase, platform: str = 'twitter', persona_config: Optional[Dict] = None):
+        super().__init__(memory_db, platform)
+        self.judge = EngagementJudge()
+        self.reply_gen = ReplyGenerator(persona_config)
 
     def execute(self, data: NotificationData) -> Optional[ScenarioResult]:
         """시나리오 실행"""
@@ -62,27 +70,52 @@ class QuotedScenario(BaseScenario):
         )
 
     def _judge(self, context: ScenarioContext) -> Dict[str, Any]:
-        """판단 로직"""
-        person = context.person
+        """LLM 기반 판단"""
+        result = self.judge.judge(
+            post_text=context.post_text or "",
+            person=context.person,
+            scenario_type='quote',
+            extra_context=None
+        )
 
-        # 아는 사람이면 reply로 감사 표현
-        if person.tier in ('familiar', 'friend'):
-            return {'action': 'reply', 'reason': 'thank familiar person'}
-
-        # 기본: like (인용 자체를 인정)
-        return {'action': 'like', 'reason': 'acknowledge quote'}
+        return {
+            'action': result.action,
+            'reason': result.reason,
+            'reply_type': result.reply_type or 'short',
+            'confidence': result.confidence
+        }
 
     def _execute_action(
         self, context: ScenarioContext, decision: Dict[str, Any]
     ) -> Optional[ScenarioResult]:
         """액션 실행"""
         action = decision.get('action', 'like')
+        tweet_id = context.post_id
 
-        if action == 'reply':
+        if action == 'skip':
+            return ScenarioResult(success=True, action='skip')
+
+        if action == 'like' and tweet_id:
+            success = twitter_api.like_tweet(tweet_id)
+            return ScenarioResult(success=success, action='like')
+
+        if action == 'reply' and tweet_id:
+            reply_content = self.reply_gen.generate(
+                post_text=context.post_text or "",
+                person=context.person,
+                reply_type='short'
+            )
+
+            if not reply_content:
+                # 답글 생성 실패 시 like로 폴백
+                success = twitter_api.like_tweet(tweet_id)
+                return ScenarioResult(success=success, action='like')
+
+            result = twitter_api.reply_to_tweet(tweet_id, reply_content)
             return ScenarioResult(
-                success=True,
+                success=result is not None,
                 action='reply',
-                content="[감사 답글 예정]"
+                content=reply_content
             )
 
         return ScenarioResult(success=True, action='like')

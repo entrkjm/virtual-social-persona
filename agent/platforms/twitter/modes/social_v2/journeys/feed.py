@@ -47,17 +47,19 @@ class FeedJourney(BaseJourney):
         self,
         memory_db: MemoryDatabase,
         platform: str = 'twitter',
-        core_interests: Optional[List[str]] = None
+        core_interests: Optional[List[str]] = None,
+        persona_config: Optional[Dict] = None
     ):
         super().__init__(memory_db, platform)
         self.core_interests = core_interests or []
+        self.persona_config = persona_config
         self._init_scenarios()
 
     def _init_scenarios(self):
         """시나리오 인스턴스 초기화"""
         self.scenarios = {
-            'familiar_person': FamiliarPersonScenario(self.memory_db, self.platform),
-            'interesting_post': InterestingPostScenario(self.memory_db, self.platform)
+            'familiar_person': FamiliarPersonScenario(self.memory_db, self.platform, self.persona_config),
+            'interesting_post': InterestingPostScenario(self.memory_db, self.platform, self.persona_config)
         }
 
     def run(

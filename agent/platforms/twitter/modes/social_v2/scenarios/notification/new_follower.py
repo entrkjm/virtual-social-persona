@@ -7,7 +7,9 @@ New Follower Scenario
 from typing import Optional, Dict, Any
 
 from ..base import BaseScenario, ScenarioResult, ScenarioContext
+from agent.memory.database import MemoryDatabase
 from agent.platforms.twitter.api.social import NotificationData
+from agent.platforms.twitter.api import social as twitter_api
 
 
 class NewFollowerScenario(BaseScenario):
@@ -19,6 +21,9 @@ class NewFollowerScenario(BaseScenario):
     2. 관심 분야가 겹치는가?
     3. 팔로우백 할 것인가?
     """
+
+    def __init__(self, memory_db: MemoryDatabase, platform: str = 'twitter', persona_config: Optional[Dict] = None):
+        super().__init__(memory_db, platform)
 
     def execute(self, data: NotificationData) -> Optional[ScenarioResult]:
         """시나리오 실행"""
@@ -53,16 +58,19 @@ class NewFollowerScenario(BaseScenario):
         )
 
     def _judge(self, context: ScenarioContext) -> Dict[str, Any]:
-        """판단 로직 (TODO: 프로필 분석)"""
+        """판단 로직 - 간단한 규칙 기반 (LLM 불필요)"""
         person = context.person
 
         # 이미 아는 사람이면 팔로우백
         if person.tier != 'stranger':
             return {'action': 'follow', 'reason': 'known person'}
 
-        # TODO: 프로필/바이오 분석하여 봇 여부, 관심사 매칭 판단
-        # 현재는 기본적으로 skip (나중에 LLM으로 판단)
-        return {'action': 'skip', 'reason': 'need profile analysis'}
+        # 새로운 사람 - 기본적으로 팔로우백 (30% 확률)
+        import random
+        if random.random() < 0.3:
+            return {'action': 'follow', 'reason': 'random follow back'}
+
+        return {'action': 'skip', 'reason': 'new stranger'}
 
     def _execute_action(
         self, context: ScenarioContext, decision: Dict[str, Any]
@@ -71,12 +79,14 @@ class NewFollowerScenario(BaseScenario):
         action = decision.get('action', 'skip')
 
         if action == 'follow':
-            # TODO: 실제 follow API 호출
-            return ScenarioResult(
-                success=True,
-                action='follow',
-                details={'reason': decision.get('reason')}
-            )
+            user_id = context.extra.get('notification', {}).get('from_user_id')
+            if user_id:
+                success = twitter_api.follow_user(user_id)
+                return ScenarioResult(
+                    success=success,
+                    action='follow',
+                    details={'reason': decision.get('reason')}
+                )
 
         return ScenarioResult(success=True, action='skip')
 

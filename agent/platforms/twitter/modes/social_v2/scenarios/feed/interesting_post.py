@@ -7,6 +7,9 @@ HYBRID v1에서 FeedJourney가 rule-based로 선택한 후 실행됨
 from typing import Optional, Dict, Any
 
 from ..base import BaseScenario, ScenarioResult, ScenarioContext
+from agent.memory.database import MemoryDatabase
+from agent.platforms.twitter.api import social as twitter_api
+from ...judgment import EngagementJudge, ReplyGenerator
 
 
 class InterestingPostScenario(BaseScenario):
@@ -16,6 +19,11 @@ class InterestingPostScenario(BaseScenario):
     FeedJourney에서 interesting으로 분류됨 (core_interests 매칭)
     여기서 실제로 어떻게 반응할지 결정
     """
+
+    def __init__(self, memory_db: MemoryDatabase, platform: str = 'twitter', persona_config: Optional[Dict] = None):
+        super().__init__(memory_db, platform)
+        self.judge = EngagementJudge()
+        self.reply_gen = ReplyGenerator(persona_config)
 
     def execute(self, data: Dict[str, Any]) -> Optional[ScenarioResult]:
         """시나리오 실행"""
@@ -52,49 +60,56 @@ class InterestingPostScenario(BaseScenario):
         )
 
     def _judge(self, context: ScenarioContext) -> Dict[str, Any]:
-        """
-        판단 로직
+        """LLM 기반 판단"""
+        result = self.judge.judge(
+            post_text=context.post_text or "",
+            person=context.person,
+            scenario_type='interesting_post',
+            extra_context=None
+        )
 
-        관심 주제이므로 반응 가능성 높음
-        TODO: LLM으로 실제 관심도 + 반응 타입 결정
-        """
-        text = context.post_text or ""
-        engagement = context.extra.get('post', {}).get('engagement', {})
-
-        # 인기 포스트면 더 적극적
-        likes = engagement.get('favorite_count', 0)
-        retweets = engagement.get('retweet_count', 0)
-        is_popular = likes > 50 or retweets > 10
-
-        # 질문이면 답글
-        if '?' in text:
-            return {'action': 'reply', 'reason': 'interesting question'}
-
-        # 인기 포스트면 like
-        if is_popular:
-            return {'action': 'like', 'reason': 'popular interesting post'}
-
-        # 50% 확률로 like
-        import random
-        if random.random() < 0.5:
-            return {'action': 'like', 'reason': 'interesting topic'}
-
-        return {'action': 'skip', 'reason': 'random skip'}
+        return {
+            'action': result.action,
+            'reason': result.reason,
+            'reply_type': result.reply_type or 'normal',
+            'confidence': result.confidence
+        }
 
     def _execute_action(
         self, context: ScenarioContext, decision: Dict[str, Any]
     ) -> Optional[ScenarioResult]:
         """액션 실행"""
         action = decision.get('action', 'skip')
+        tweet_id = context.post_id
+
+        if action == 'skip':
+            return ScenarioResult(success=True, action='skip')
 
         if action == 'like':
-            return ScenarioResult(success=True, action='like')
+            success = twitter_api.like_tweet(tweet_id)
+            return ScenarioResult(success=success, action='like')
 
         if action == 'reply':
+            reply_content = self.reply_gen.generate(
+                post_text=context.post_text or "",
+                person=context.person,
+                reply_type=decision.get('reply_type', 'normal')
+            )
+
+            if not reply_content:
+                success = twitter_api.like_tweet(tweet_id)
+                return ScenarioResult(success=success, action='like')
+
+            result = twitter_api.reply_to_tweet(tweet_id, reply_content)
+            success = result is not None
+
+            if success:
+                twitter_api.like_tweet(tweet_id)
+
             return ScenarioResult(
-                success=True,
+                success=success,
                 action='reply',
-                content="[답글 생성 예정]",
+                content=reply_content,
                 details={'reason': decision.get('reason')}
             )
 

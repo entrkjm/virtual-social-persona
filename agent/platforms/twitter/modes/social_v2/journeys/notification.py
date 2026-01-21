@@ -45,17 +45,18 @@ class NotificationJourney(BaseJourney):
         'unknown': 99
     }
 
-    def __init__(self, memory_db: MemoryDatabase, platform: str = 'twitter'):
+    def __init__(self, memory_db: MemoryDatabase, platform: str = 'twitter', persona_config: Optional[Dict] = None):
         super().__init__(memory_db, platform)
+        self.persona_config = persona_config
         self._init_scenarios()
 
     def _init_scenarios(self):
         """시나리오 인스턴스 초기화"""
         self.scenarios = {
-            'reply': ReceivedCommentScenario(self.memory_db, self.platform),
-            'mention': MentionedScenario(self.memory_db, self.platform),
-            'quote': QuotedScenario(self.memory_db, self.platform),
-            'follow': NewFollowerScenario(self.memory_db, self.platform)
+            'reply': ReceivedCommentScenario(self.memory_db, self.platform, self.persona_config),
+            'mention': MentionedScenario(self.memory_db, self.platform, self.persona_config),
+            'quote': QuotedScenario(self.memory_db, self.platform, self.persona_config),
+            'follow': NewFollowerScenario(self.memory_db, self.platform, self.persona_config)
         }
 
     def run(self, count: int = 20, process_limit: int = 1) -> Optional[JourneyResult]:

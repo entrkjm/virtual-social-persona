@@ -9,6 +9,8 @@ from typing import Optional, Dict, Any
 from ..base import BaseScenario, ScenarioResult, ScenarioContext
 from agent.memory.database import MemoryDatabase
 from agent.platforms.twitter.api.social import NotificationData
+from agent.platforms.twitter.api import social as twitter_api
+from ...judgment import EngagementJudge, ReplyGenerator
 
 
 class ReceivedCommentScenario(BaseScenario):
@@ -20,6 +22,11 @@ class ReceivedCommentScenario(BaseScenario):
     2. 어떤 내용인가? (질문 vs 감상 vs 반박)
     3. 대화를 이어갈 것인가? (reply vs like only vs skip)
     """
+
+    def __init__(self, memory_db: MemoryDatabase, platform: str = 'twitter', persona_config: Optional[Dict] = None):
+        super().__init__(memory_db, platform)
+        self.judge = EngagementJudge()
+        self.reply_gen = ReplyGenerator(persona_config)
 
     def execute(self, data: NotificationData) -> Optional[ScenarioResult]:
         """
@@ -74,60 +81,57 @@ class ReceivedCommentScenario(BaseScenario):
         )
 
     def _judge(self, context: ScenarioContext) -> Dict[str, Any]:
-        """
-        판단 로직
+        """LLM 기반 판단"""
+        result = self.judge.judge(
+            post_text=context.post_text or "",
+            person=context.person,
+            scenario_type='notification_reply',
+            extra_context={'is_reply_to_me': True}
+        )
 
-        TODO: LLM 연동하여 실제 판단
-        현재는 기본 로직으로 구현
-        """
-        person = context.person
-        text = context.post_text or ""
-
-        # 기본 판단: 아는 사람이면 reply, 아니면 like
-        if person.tier in ('familiar', 'friend'):
-            return {
-                'action': 'reply',
-                'reason': f'familiar person ({person.tier})',
-                'reply_type': 'normal'
-            }
-
-        # 질문이면 reply
-        if '?' in text or '어떻게' in text or '뭐' in text:
-            return {
-                'action': 'reply',
-                'reason': 'question detected',
-                'reply_type': 'answer'
-            }
-
-        # 기본: like만
         return {
-            'action': 'like',
-            'reason': 'default response'
+            'action': result.action,
+            'reason': result.reason,
+            'reply_type': result.reply_type or 'normal',
+            'confidence': result.confidence
         }
 
     def _execute_action(
         self, context: ScenarioContext, decision: Dict[str, Any]
     ) -> Optional[ScenarioResult]:
-        """액션 실행"""
+        """액션 실행 - 실제 API 호출"""
         action = decision.get('action', 'skip')
+        tweet_id = context.post_id
 
         if action == 'skip':
             return ScenarioResult(success=True, action='skip')
 
         if action == 'like':
-            # TODO: 실제 like API 호출
+            success = twitter_api.like_tweet(tweet_id)
             return ScenarioResult(
-                success=True,
+                success=success,
                 action='like',
                 details={'reason': decision.get('reason')}
             )
 
         if action == 'reply':
-            # TODO: LLM으로 답글 생성 + API 호출
+            reply_content = self.reply_gen.generate(
+                post_text=context.post_text or "",
+                person=context.person,
+                reply_type=decision.get('reply_type', 'normal'),
+                context={'is_reply_to_me': True}
+            )
+
+            if not reply_content:
+                return ScenarioResult(success=False, action='reply', details={'error': 'empty reply'})
+
+            result = twitter_api.reply_to_tweet(tweet_id, reply_content)
+            success = result is not None
+
             return ScenarioResult(
-                success=True,
+                success=success,
                 action='reply',
-                content="[답글 생성 예정]",
+                content=reply_content,
                 details={
                     'reason': decision.get('reason'),
                     'reply_type': decision.get('reply_type')
