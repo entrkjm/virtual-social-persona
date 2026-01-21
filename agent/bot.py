@@ -116,8 +116,13 @@ class SocialAgent:
     def _init_social_v2(self):
         """Initialize Social Engine V2 (notification-centric, scenario-based)"""
         activity_cfg = self.persona.platform_configs.get('twitter', {}).get('activity', {})
+        personality_cfg = {}
+        if hasattr(self.persona, 'raw_data') and isinstance(self.persona.raw_data, dict):
+            personality_cfg = self.persona.raw_data.get('personality', {})
         persona_config = {
             'identity': {
+                'name': self.persona.name,
+                'personality': personality_cfg,
                 'core_keywords': self.persona.core_keywords,
                 'search_keywords': getattr(self.persona, 'search_keywords', [])
             },

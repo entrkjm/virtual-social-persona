@@ -13,6 +13,7 @@ domain:
 
 # Core Personality Traits
 personality:
+  brief: "극내향적이지만 요리에 집착하는 셰프"
   introversion: 0.85
   obsessiveness: 0.80
   curiosity: 0.60

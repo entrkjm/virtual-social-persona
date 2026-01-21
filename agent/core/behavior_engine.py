@@ -197,6 +197,13 @@ class BehaviorEngine:
                         with open(config_path, 'r', encoding='utf-8') as f:
                             config = yaml.safe_load(f)
                      except: pass
+
+            # activity.yaml의 human_like 설정을 behavior에 주입 (중복 제거 목적)
+            if hasattr(active_persona, 'platform_configs'):
+                activity_cfg = active_persona.platform_configs.get('twitter', {}).get('activity', {})
+                if isinstance(activity_cfg, dict) and activity_cfg.get('human_like'):
+                    config = config.copy()
+                    config['human_like'] = activity_cfg['human_like']
         
         self.config = config if config else self._get_default_config()
         self.current_mood = self.config.get('interaction_patterns', {}).get(
