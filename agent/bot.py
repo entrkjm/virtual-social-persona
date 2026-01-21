@@ -16,6 +16,7 @@ from agent.core.behavior_engine import behavior_engine, human_like_controller
 from agent.core.follow_engine import follow_engine
 from agent.platforms.twitter.modes.casual.post_generator import CasualPostGenerator
 from agent.platforms.twitter.modes.social_legacy.reply_generator import SocialReplyGenerator
+from agent.platforms.twitter.modes.social import SocialEngineV2
 from typing import Tuple, Dict, Any, Optional, List
 from datetime import datetime
 import random
@@ -105,6 +106,27 @@ class SocialAgent:
         
         # Series Engine 초기화
         self.series_engine = SeriesEngine(self.persona)
+
+        # Social Engine V2 (experimental)
+        self.use_social_v2 = settings.USE_SOCIAL_V2
+        self.social_engine_v2 = None
+        if self.use_social_v2:
+            self._init_social_v2()
+
+    def _init_social_v2(self):
+        """Initialize Social Engine V2 (notification-centric, scenario-based)"""
+        persona_config = {
+            'identity': {
+                'core_keywords': self.persona.core_keywords,
+                'search_keywords': getattr(self.persona, 'search_keywords', [])
+            }
+        }
+        self.social_engine_v2 = SocialEngineV2(
+            persona_id=self.persona.id,
+            persona_config=persona_config,
+            platform='twitter'
+        )
+        logger.info("[BOT] Social Engine V2 initialized")
 
     def _get_current_mood(self):
         """시간대별 기분 / Time-based mood"""
@@ -375,7 +397,11 @@ class SocialAgent:
             if not can_act:
                 print(f"[HUMAN-LIKE] 멘션 액션 제한: {reason}")
                 return FunctionResultStatus.DONE, f"SKIP (human-like): {reason}", {'human_like_skip': True}
-            
+
+            # Social V2: Notification Journey
+            if self.use_social_v2 and self.social_engine_v2:
+                return self._check_mentions_v2()
+
             mentions = self.adapter.get_mentions(count=10)
             
             if not mentions:
@@ -488,6 +514,10 @@ class SocialAgent:
             if not can_act:
                 logger.info(f"[HUMAN-LIKE] 액션 제한: {reason}")
                 return FunctionResultStatus.DONE, f"SKIP (human-like): {reason}", {'human_like_skip': True}
+
+            # Social V2: Feed Journey with posts from adapter
+            if self.use_social_v2 and self.social_engine_v2:
+                return self._scout_and_respond_v2()
 
             # SCOUT
             hour = datetime.now().hour
@@ -839,6 +869,109 @@ class SocialAgent:
             
         except Exception as e:
             return FunctionResultStatus.FAILED, f"Error checking my replies: {e}", {}
+
+    def _check_mentions_v2(self) -> Tuple[FunctionResultStatus, str, Dict[str, Any]]:
+        """Social V2: Notification Journey for mentions/replies"""
+        try:
+            result = self.social_engine_v2.run_notification_journey(
+                count=20,
+                process_limit=1
+            )
+
+            if not result:
+                return FunctionResultStatus.DONE, "No notifications to process (V2)", {}
+
+            if result.success:
+                human_like_controller.record_action('comment' if result.action_taken == 'reply' else result.action_taken or 'like')
+                return FunctionResultStatus.DONE, f"[V2] {result.scenario_executed}: {result.action_taken}", {
+                    'v2': True,
+                    'scenario': result.scenario_executed,
+                    'action': result.action_taken,
+                    'target_user': result.target_user
+                }
+
+            return FunctionResultStatus.DONE, f"[V2] Notification processed (no action): {result.scenario_executed}", {'v2': True}
+
+        except Exception as e:
+            logger.error(f"[V2] Notification journey failed: {e}")
+            return FunctionResultStatus.FAILED, f"[V2] Error: {e}", {}
+
+    def _scout_and_respond_v2(self) -> Tuple[FunctionResultStatus, str, Dict[str, Any]]:
+        """Social V2: Feed Journey for timeline exploration"""
+        try:
+            # Fetch posts using existing logic
+            hour = datetime.now().hour
+            core_keywords = self.persona.core_keywords
+            time_kw_config = self.persona.behavior.get('time_keywords', {})
+
+            if 6 <= hour < 11:
+                time_keywords = time_kw_config.get('morning', [])
+            elif 11 <= hour < 14:
+                time_keywords = time_kw_config.get('lunch', [])
+            elif 14 <= hour < 17:
+                time_keywords = time_kw_config.get('afternoon', [])
+            elif 17 <= hour < 21:
+                time_keywords = time_kw_config.get('dinner', [])
+            else:
+                time_keywords = time_kw_config.get('late_night', time_kw_config.get('default', []))
+
+            if not time_keywords:
+                time_keywords = core_keywords
+
+            search_query, source = self.topic_selector.select(
+                core_keywords=core_keywords,
+                time_keywords=time_keywords,
+                curiosity_keywords=agent_memory.get_top_interests(limit=10),
+                trend_keywords=[],
+                inspiration_topics=[]
+            )
+
+            logger.info(f"[SCOUT V2] query={search_query} (source={source})")
+            posts = self.adapter.search(search_query, count=8)
+
+            if not posts:
+                return FunctionResultStatus.DONE, "No tweets found (V2)", {}
+
+            # Convert SocialPost to dict for FeedJourney
+            posts_data = []
+            for post in posts:
+                posts_data.append({
+                    'id': post.id,
+                    'user_id': post.user.id if post.user else '',
+                    'user': post.user.username if post.user else '',
+                    'text': post.text,
+                    'engagement': {
+                        'favorite_count': getattr(post, 'favorite_count', 0),
+                        'retweet_count': getattr(post, 'retweet_count', 0)
+                    }
+                })
+
+            # Run Feed Journey
+            result = self.social_engine_v2.run_feed_journey(
+                posts=posts_data,
+                process_limit=1
+            )
+
+            if not result:
+                return FunctionResultStatus.DONE, "No valid candidates (V2)", {}
+
+            if result.success and result.action_taken and result.action_taken != 'skip':
+                action_type = 'comment' if result.action_taken == 'reply' else result.action_taken
+                human_like_controller.record_action(action_type)
+                human_like_controller.apply_action_delay(action_type)
+
+                return FunctionResultStatus.DONE, f"[V2] {result.scenario_executed}: {result.action_taken} @{result.target_user}", {
+                    'v2': True,
+                    'scenario': result.scenario_executed,
+                    'action': result.action_taken,
+                    'target_user': result.target_user
+                }
+
+            return FunctionResultStatus.DONE, f"[V2] Feed processed (skipped): {result.scenario_executed}", {'v2': True}
+
+        except Exception as e:
+            logger.error(f"[V2] Feed journey failed: {e}")
+            return FunctionResultStatus.FAILED, f"[V2] Error: {e}", {}
 
 
 # Global instance removed - injected in main.py

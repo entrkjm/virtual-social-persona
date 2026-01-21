@@ -42,6 +42,10 @@ class Settings:
     # Agent 모드 설정 (normal | test | aggressive)
     AGENT_MODE = os.getenv("AGENT_MODE", "normal")
 
+    # Social Engine V2 (default enabled)
+    # Set USE_SOCIAL_V2=false to use legacy social mode
+    USE_SOCIAL_V2 = os.getenv("USE_SOCIAL_V2", "true").lower() == "true"
+
     # 데이터 저장 경로
     DATA_DIR = os.getenv("DATA_DIR", "data")
     MEMORY_DB_PATH = os.getenv("MEMORY_DB_PATH", os.path.join(DATA_DIR, "memory.db"))
