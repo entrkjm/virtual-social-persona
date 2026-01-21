@@ -100,8 +100,9 @@ quip_category: 짧은 반응(1-15자)으로 충분한 경우 해당 카테고리
             perception = json.loads(clean_response)
             perception["tweet_length"] = tweet_length
 
-            # response_type 결정 (config-driven) - social/config.yaml에서 response_strategy 읽기
-            social_config = active_persona.platform_configs.get('twitter', {}).get('modes', {}).get('social', {}).get('config', {})
+            # response_type 결정 (config-driven) - legacy config 우선
+            social_legacy_config = active_persona.platform_configs.get('twitter', {}).get('modes', {}).get('social_legacy', {}).get('config', {})
+            social_config = social_legacy_config or active_persona.platform_configs.get('twitter', {}).get('modes', {}).get('social', {}).get('config', {})
             perception["response_type"] = InteractionIntelligence._determine_response_type(
                 perception, social_config
             )

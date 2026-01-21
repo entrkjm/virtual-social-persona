@@ -190,10 +190,12 @@ class BehaviorEngine:
             if hasattr(active_persona, 'platform_configs'):
                 platform_config = active_persona.platform_configs.get('twitter', {}).get('behavior', {})
 
-            # 3. Social Mode Config (behavior_thresholds, interaction_patterns)
+            # 3. Social Legacy Config (behavior_thresholds, interaction_patterns)
             social_config = {}
             if hasattr(active_persona, 'platform_configs'):
-                social_config = active_persona.platform_configs.get('twitter', {}).get('modes', {}).get('social', {}).get('config', {})
+                social_config = active_persona.platform_configs.get('twitter', {}).get('modes', {}).get('social_legacy', {}).get('config', {})
+                if not social_config:
+                    social_config = active_persona.platform_configs.get('twitter', {}).get('modes', {}).get('social', {}).get('config', {})
 
             # 4. Merge: Social > Platform > Core
             config = self._merge_configs(core_config, platform_config)

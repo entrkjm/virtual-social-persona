@@ -58,13 +58,15 @@ class SocialAgent:
         # Mode-specific content generators
         platform_config = self.persona.signature_series.get('twitter', {}).get('config', {})
         social_mode_cfg = self.persona.platform_configs.get('twitter', {}).get('modes', {}).get('social', {})
+        social_legacy_cfg = self.persona.platform_configs.get('twitter', {}).get('modes', {}).get('social_legacy', {})
         # Merge 'config' and 'behavior' from social mode if they exist for better visibility in generator
         social_full_cfg = {}
-        if isinstance(social_mode_cfg, dict):
-             social_full_cfg.update(social_mode_cfg.get('config', {}))
-             social_full_cfg.update(social_mode_cfg.get('behavior', {}))
+        legacy_source = social_legacy_cfg if isinstance(social_legacy_cfg, dict) and social_legacy_cfg else social_mode_cfg
+        if isinstance(legacy_source, dict):
+             social_full_cfg.update(legacy_source.get('config', {}))
+             social_full_cfg.update(legacy_source.get('behavior', {}))
              # Preserve any other root keys like 'style' or 'quip_pool' if they were moved
-             for k, v in social_mode_cfg.items():
+             for k, v in legacy_source.items():
                  if k not in ['config', 'behavior']: # 'style' should be preserved if it's a root key
                      social_full_cfg[k] = v
 
