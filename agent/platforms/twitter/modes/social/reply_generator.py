@@ -18,7 +18,8 @@ class SocialReplyGenerator(BaseContentGenerator):
     def __init__(self, persona_config, platform_config: Optional[Dict] = None):
         super().__init__(persona_config, platform_config)
         self.formatter = TwitterFormatter(platform_config)
-        self.reviewer = SocialReplyReviewer(persona_config)
+        review_config = self.platform_config.get('review', {})
+        self.reviewer = SocialReplyReviewer(persona_config, review_config)
         self._load_constraints()
 
     def _load_constraints(self):

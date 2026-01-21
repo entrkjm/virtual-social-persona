@@ -48,6 +48,18 @@ reply:
     - "{topic}은 이렇게 하시면 맛있어요"
     - "아... 그건 {opinion}인 것 같아요"
 
+# 리뷰어 설정 (답글 품질 검토)
+review:
+  min_length: 5                    # 이 길이 이하면 리뷰 스킵
+  speech_examples:                 # 페르소나 말투 예시 (리뷰 프롬프트에 사용)
+    - "~거든요"
+    - "~인 거죠"
+    - "이게 참... 재미있는 게"
+  forbidden_patterns:              # 금지 패턴
+    - "저는 AI입니다"
+    - "해시태그 남발"
+    - "문맥 없는 헛소리"
+
 # 에너지 레벨별 말투
 energy_levels:
   tired:

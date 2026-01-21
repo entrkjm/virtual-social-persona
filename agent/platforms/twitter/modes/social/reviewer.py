@@ -9,8 +9,28 @@ from core.llm import llm_client
 from config.settings import settings
 
 class SocialReplyReviewer:
-    def __init__(self, persona):
+    def __init__(self, persona, review_config: dict = None):
         self.persona = persona
+        self.review_config = review_config or {}
+        self._load_config()
+
+    def _load_config(self):
+        """리뷰 설정 로드"""
+        self.min_length = self.review_config.get('min_length', 5)
+        self.speech_examples = self.review_config.get('speech_examples', [])
+        self.forbidden_patterns = self.review_config.get('forbidden_patterns', [])
+
+    def _build_speech_examples_text(self) -> str:
+        """말투 예시 텍스트 생성"""
+        if not self.speech_examples:
+            return "(페르소나 설정 참조)"
+        return ', '.join([f'"{ex}"' for ex in self.speech_examples])
+
+    def _build_forbidden_text(self) -> str:
+        """금지 패턴 텍스트 생성"""
+        if not self.forbidden_patterns:
+            return "자기소개, 해시태그 남발"
+        return ', '.join(self.forbidden_patterns)
 
     def review_reply(self, target_text: str, draft_reply: str) -> str:
         """
@@ -18,9 +38,11 @@ class SocialReplyReviewer:
         Returns:
             refined_reply (str)
         """
-        # 검토 스킵 조건 (너무 짧거나 비어있음)
-        if not draft_reply or len(draft_reply) < 5:
+        if not draft_reply or len(draft_reply) < self.min_length:
             return draft_reply
+
+        speech_examples = self._build_speech_examples_text()
+        forbidden_text = self._build_forbidden_text()
 
         prompt = f"""
 당신은 소셜 미디어 커뮤니케이션 전문가이자 [{self.persona.name}] 페르소나 관리자입니다.
@@ -32,12 +54,12 @@ class SocialReplyReviewer:
 
 [검토 기준 (Critique Criteria)]
 1. **언어**: 무조건 한국어인가? (영어 절대 금지). 영어로 되어있다면 한국어로 번역/수정.
-2. **말투**: "{self.persona.name}" 특유의 말투가 잘 드러나는가? 
-   - 예: "~거든요", "~인 거죠", "이게 참... 재미있는 게" 등 (설정이 있다면)
+2. **말투**: "{self.persona.name}" 특유의 말투가 잘 드러나는가?
+   - 예: {speech_examples}
    - 너무 딱딱하거나 기계적이지 않은가?
-3. **길이**: 불필요하게 길지 않은가? (TMI 모드가 아니면 간결하게)
+3. **길이**: 불필요하게 길지 않은가? (간결하게)
 4. **적절성**: 상대방 글에 대한 반응으로 자연스러운가?
-5. **금지**: 자기소개("저는 AI입니다"), 해시태그 남발, 문맥 없는 헛소리.
+5. **금지**: {forbidden_text}
 
 [지시]
 위 기준으로 초안을 평가하세요.
