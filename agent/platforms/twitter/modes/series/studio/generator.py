@@ -54,15 +54,22 @@ class ImageGenerator:
         from core.llm import llm_client
         import json
 
+        # Art Director 설정 (YAML에서 로드)
+        art_director = prompt_guide.get('art_director', {})
+        ad_role = art_director.get('role', 'Art Director specializing in CANDID photography')
+        ad_goal = art_director.get('goal', 'create prompts that look like candid smartphone photos')
+        self._domain_context = art_director.get('domain_context', 'subject')
+        self._setting_examples = art_director.get('setting_examples', ['indoor setting'])
+
         guide_json = json.dumps(prompt_guide, indent=2, ensure_ascii=False)
-        
+
         # style_prefix가 있으면 사용
         style_prefix = prompt_guide.get('style_prefix', 'Candid smartphone photo, unedited, raw')
         negative_prompts = prompt_guide.get('negative_prompts', '')
-        
+
         prompt = f"""
-You are an Art Director specializing in CANDID, AMATEUR-LOOKING food photography.
-Your goal is to create prompts that look like a HOME COOK took a quick photo with their SMARTPHONE - NOT professional food photography.
+You are an {ad_role}.
+Your goal is to {ad_goal}.
 
 IMPORTANT: "Smartphone photo" means the STYLE of the photo (casual, unedited) - DO NOT include any smartphone or phone device in the actual image!
 
@@ -109,11 +116,12 @@ Example:
             
         except Exception as e:
             print(f"[ImageGenerator] Dynamic Prompt Logic Failed: {e}")
-            # Fallback: 스마트폰 스타일로 변경 (professional, 8k 제거)
+            # Fallback: YAML 설정 기반 동적 생성
+            setting = self._setting_examples[0] if self._setting_examples else 'indoor setting'
             return [
-                f"Candid smartphone photo of {topic}, iPhone shot, messy home kitchen, natural daylight, amateur photographer, unedited raw photo, no filters",
-                f"Overhead phone snapshot of {topic}, flat lay on scratched wooden table, sauce splatters, crumbs visible, casual mobile snapshot",
-                f"Quick photo of {topic} before eating, 45-degree angle, steam rising, slightly blurred background, everyday dining scene",
-                f"Close-up phone camera shot of {topic}, visible grain, natural imperfections, home cook style, no post-processing"
+                f"Candid smartphone photo of {topic}, iPhone shot, {setting}, natural daylight, amateur photographer, unedited raw photo, no filters",
+                f"Overhead phone snapshot of {topic}, flat lay on scratched surface, casual mobile snapshot",
+                f"Quick photo of {topic}, 45-degree angle, slightly blurred background, everyday scene",
+                f"Close-up phone camera shot of {topic}, visible grain, natural imperfections, no post-processing"
             ]
 

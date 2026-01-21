@@ -1,4 +1,15 @@
 # Image Generation Guidelines (Photorealism - Smartphone Style)
+
+# Art Director 역할 설정 (페르소나별로 다르게 설정)
+art_director:
+  role: "Art Director specializing in CANDID, AMATEUR-LOOKING food photography"
+  goal: "create prompts that look like a HOME COOK took a quick photo with their SMARTPHONE - NOT professional food photography"
+  domain_context: "food"
+  setting_examples:
+    - "messy home kitchen"
+    - "everyday dining table"
+    - "natural daylight from window"
+
 prompt_guide:
   # 중요: 모든 프롬프트는 "스마트폰으로 찍은 캐주얼 스냅샷" 스타일이어야 함
   style_prefix: "Candid smartphone photo, iPhone 15 Pro shot, unedited, raw photo, no filters, casual snapshot"

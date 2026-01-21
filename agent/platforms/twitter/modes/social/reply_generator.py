@@ -14,11 +14,28 @@ from agent.platforms.twitter.modes.social.reviewer import SocialReplyReviewer
 
 class SocialReplyGenerator(BaseContentGenerator):
     """Twitter Social Mode - 답글 생성"""
-    
+
     def __init__(self, persona_config, platform_config: Optional[Dict] = None):
         super().__init__(persona_config, platform_config)
         self.formatter = TwitterFormatter(platform_config)
         self.reviewer = SocialReplyReviewer(persona_config)
+        self._load_constraints()
+
+    def _load_constraints(self):
+        """YAML에서 전문가 프레이밍 제약 로드"""
+        constraints = self.platform_config.get('constraints', {})
+        self.avoid_expert_phrases = constraints.get('avoid_expert_phrases', [])
+        self.friendly_alternative = constraints.get('friendly_alternative', '저는 이렇게 해요')
+
+    def _get_avoid_phrases_text(self) -> str:
+        """프롬프트용 회피 문구 텍스트 생성"""
+        if not self.avoid_expert_phrases:
+            return '"전문가로서..."'
+        return ', '.join([f'"{p}"' for p in self.avoid_expert_phrases[:2]])
+
+    def _get_friendly_alternative(self) -> str:
+        """친근한 대안 문구 반환"""
+        return self.friendly_alternative
     
     def generate(
         self,
@@ -126,8 +143,8 @@ class SocialReplyGenerator(BaseContentGenerator):
 - {config.min_length}~{config.max_length}자 사이로 작성
 - 멘션(@username) 포함 금지
 - 페르소나의 말투 특성 반영
-- [중요] 전문가 티 내지 말고 친근한 이웃처럼 반응하세요. "요리사로서..." 같은 발언 자제.
-- 팁을 주더라도 "저는 이렇게 해요" 정도로 가볍게.
+- [중요] 전문가 티 내지 말고 친근한 이웃처럼 반응하세요. {self._get_avoid_phrases_text()} 같은 발언 자제.
+- 팁을 주더라도 "{self._get_friendly_alternative()}" 정도로 가볍게.
 {constraint_prompt}
 """
             return llm_client.generate(prompt)

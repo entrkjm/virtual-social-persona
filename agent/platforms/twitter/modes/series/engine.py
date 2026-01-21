@@ -137,6 +137,8 @@ class SeriesEngine:
         # 3. 이미지 생성 (Dynamic Multi-Prompt)
         studio_config = self.config.get(platform, {}).get('studio', {})
         prompt_guide = studio_config.get('prompt_guide', {})
+        art_director = studio_config.get('art_director', {})
+        prompt_guide['art_director'] = art_director
         
         # Context Injection (Season, Time)
         now = datetime.now()

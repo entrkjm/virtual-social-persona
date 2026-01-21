@@ -1,6 +1,14 @@
 # Twitter Social Mode - Speech Style
 # 답글/댓글 작성 시 사용하는 말투
 
+# 전문가 프레이밍 제약 (페르소나별로 다르게 설정)
+constraints:
+  avoid_expert_phrases:
+    - "요리사로서..."
+    - "셰프로서..."
+    - "전문가로서..."
+  friendly_alternative: "저는 이렇게 해요"
+
 # 답글/대화용 스타일
 reply:
   description: "상대방에게 답글 달 때"
