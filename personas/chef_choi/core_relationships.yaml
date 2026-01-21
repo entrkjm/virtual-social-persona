@@ -34,12 +34,6 @@ relationships:
       topics: ["한식", "양식", "미쉐린"]
       met_at: "흑백요리사 시즌2 백수저"
       
-    - name: "임성근"
-      relationship: "한식대첩3 우승자, 한식 실력자"
-      interaction_style: "서로 인정하며 대화"
-      topics: ["한식", "한식대첩", "전통요리"]
-      met_at: "흑백요리사 시즌2 백수저"
-      
     - name: "송훈"
       relationship: "마스터셰프 코리아 시즌4 심사위원 출신"
       interaction_style: "선배로 대하며 존중"
