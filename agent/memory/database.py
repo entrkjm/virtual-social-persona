@@ -73,6 +73,38 @@ class CoreMemory:
     created_at: datetime
 
 
+@dataclass
+class PersonMemory:
+    """사람에 대한 기억 / Memory about a person"""
+    user_id: str
+    platform: str
+    screen_name: str
+    who_is_this: str  # 자연어 설명 (LLM이 업데이트)
+    tier: str  # 'stranger', 'acquaintance', 'familiar', 'friend'
+    affinity: float  # -1.0 ~ 1.0
+    memorable_moments: List[Dict[str, Any]]  # [{date, summary}]
+    latest_conversations: List[Dict[str, Any]]  # [{id, date, type, post_id, topic, summary, turns, state}]
+    first_met_at: datetime
+    last_interaction_at: Optional[datetime]
+    updated_at: datetime
+
+
+@dataclass
+class ConversationRecord:
+    """대화 기록 / Conversation record"""
+    id: str
+    person_id: str  # PersonMemory.user_id
+    platform: str
+    post_id: str
+    conversation_type: str  # 'my_post_reply', 'their_post_reply', 'mention', 'quote', 'dm'
+    topic: Optional[str]
+    summary: str  # LLM이 생성한 요약
+    turn_count: int
+    state: str  # 'ongoing', 'concluded', 'stale'
+    started_at: datetime
+    last_updated_at: datetime
+
+
 class MemoryDatabase:
     def __init__(self, db_path: str = None):
         self.db_path = db_path or settings.MEMORY_DB_PATH
@@ -212,6 +244,41 @@ class MemoryDatabase:
                 )
             """)
 
+            # Person memories table (Social v2)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS person_memories (
+                    user_id TEXT NOT NULL,
+                    platform TEXT NOT NULL,
+                    screen_name TEXT NOT NULL,
+                    who_is_this TEXT,
+                    tier TEXT DEFAULT 'stranger',
+                    affinity REAL DEFAULT 0.0,
+                    memorable_moments TEXT,
+                    latest_conversations TEXT,
+                    first_met_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    last_interaction_at DATETIME,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (platform, user_id)
+                )
+            """)
+
+            # Conversation records table (Social v2)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS conversation_records (
+                    id TEXT PRIMARY KEY,
+                    person_id TEXT NOT NULL,
+                    platform TEXT NOT NULL,
+                    post_id TEXT NOT NULL,
+                    conversation_type TEXT NOT NULL,
+                    topic TEXT,
+                    summary TEXT,
+                    turn_count INTEGER DEFAULT 1,
+                    state TEXT DEFAULT 'ongoing',
+                    started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    last_updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
             # Indexes
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_episodes_timestamp ON episodes(timestamp)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_inspirations_tier ON inspirations(tier)")
@@ -219,6 +286,10 @@ class MemoryDatabase:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_relationships_last_interaction ON relationships(last_interaction_at)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_pattern_usage_type ON pattern_usage(pattern_type)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_pattern_usage_at ON pattern_usage(used_at)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_person_memories_tier ON person_memories(tier)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_person_memories_affinity ON person_memories(affinity)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_conversation_records_person ON conversation_records(person_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_conversation_records_state ON conversation_records(state)")
 
 
     def _migrate_db(self):
@@ -613,6 +684,206 @@ class MemoryDatabase:
             content_preview = p['content'][:80] + "..." if len(p['content']) > 80 else p['content']
             context += f"- {content_preview}\n"
         return context
+
+    # ==================== Person Memory Methods (Social v2) ====================
+
+    def get_or_create_person(self, user_id: str, screen_name: str, platform: str = 'twitter') -> PersonMemory:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM person_memories WHERE platform = ? AND user_id = ?",
+                (platform, user_id)
+            )
+            row = cursor.fetchone()
+
+            if row:
+                return self._row_to_person_memory(row)
+
+            now = datetime.now()
+            person = PersonMemory(
+                user_id=user_id,
+                platform=platform,
+                screen_name=screen_name,
+                who_is_this="",
+                tier='stranger',
+                affinity=0.0,
+                memorable_moments=[],
+                latest_conversations=[],
+                first_met_at=now,
+                last_interaction_at=None,
+                updated_at=now
+            )
+            cursor.execute("""
+                INSERT INTO person_memories
+                (user_id, platform, screen_name, tier, affinity, first_met_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (user_id, platform, screen_name, 'stranger', 0.0, now.isoformat(), now.isoformat()))
+            return person
+
+    def get_person(self, user_id: str, platform: str = 'twitter') -> Optional[PersonMemory]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM person_memories WHERE platform = ? AND user_id = ?",
+                (platform, user_id)
+            )
+            row = cursor.fetchone()
+            return self._row_to_person_memory(row) if row else None
+
+    def get_persons_by_tier(self, tier: str, platform: str = 'twitter', limit: int = 50) -> List[PersonMemory]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM person_memories
+                WHERE platform = ? AND tier = ?
+                ORDER BY affinity DESC, last_interaction_at DESC
+                LIMIT ?
+            """, (platform, tier, limit))
+            return [self._row_to_person_memory(row) for row in cursor.fetchall()]
+
+    def get_familiar_persons(self, platform: str = 'twitter', limit: int = 50) -> List[PersonMemory]:
+        """familiar 이상 티어의 사람들 조회"""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM person_memories
+                WHERE platform = ? AND tier IN ('familiar', 'friend')
+                ORDER BY affinity DESC
+                LIMIT ?
+            """, (platform, limit))
+            return [self._row_to_person_memory(row) for row in cursor.fetchall()]
+
+    def update_person(self, person: PersonMemory):
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE person_memories SET
+                    screen_name = ?,
+                    who_is_this = ?,
+                    tier = ?,
+                    affinity = ?,
+                    memorable_moments = ?,
+                    latest_conversations = ?,
+                    last_interaction_at = ?,
+                    updated_at = ?
+                WHERE platform = ? AND user_id = ?
+            """, (
+                person.screen_name,
+                person.who_is_this,
+                person.tier,
+                person.affinity,
+                json.dumps(person.memorable_moments, ensure_ascii=False),
+                json.dumps(person.latest_conversations, ensure_ascii=False),
+                person.last_interaction_at.isoformat() if person.last_interaction_at else None,
+                datetime.now().isoformat(),
+                person.platform,
+                person.user_id
+            ))
+
+    def _row_to_person_memory(self, row) -> PersonMemory:
+        return PersonMemory(
+            user_id=row['user_id'],
+            platform=row['platform'],
+            screen_name=row['screen_name'],
+            who_is_this=row['who_is_this'] or "",
+            tier=row['tier'],
+            affinity=row['affinity'],
+            memorable_moments=json.loads(row['memorable_moments']) if row['memorable_moments'] else [],
+            latest_conversations=json.loads(row['latest_conversations']) if row['latest_conversations'] else [],
+            first_met_at=datetime.fromisoformat(row['first_met_at']) if row['first_met_at'] else datetime.now(),
+            last_interaction_at=datetime.fromisoformat(row['last_interaction_at']) if row['last_interaction_at'] else None,
+            updated_at=datetime.fromisoformat(row['updated_at']) if row['updated_at'] else datetime.now()
+        )
+
+    # ==================== Conversation Record Methods (Social v2) ====================
+
+    def add_conversation(self, conv: ConversationRecord) -> str:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO conversation_records
+                (id, person_id, platform, post_id, conversation_type, topic, summary, turn_count, state, started_at, last_updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                conv.id,
+                conv.person_id,
+                conv.platform,
+                conv.post_id,
+                conv.conversation_type,
+                conv.topic,
+                conv.summary,
+                conv.turn_count,
+                conv.state,
+                conv.started_at.isoformat(),
+                conv.last_updated_at.isoformat()
+            ))
+        return conv.id
+
+    def get_conversation(self, conv_id: str) -> Optional[ConversationRecord]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM conversation_records WHERE id = ?", (conv_id,))
+            row = cursor.fetchone()
+            return self._row_to_conversation(row) if row else None
+
+    def get_conversations_by_person(
+        self, person_id: str, platform: str = 'twitter', limit: int = 10
+    ) -> List[ConversationRecord]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM conversation_records
+                WHERE person_id = ? AND platform = ?
+                ORDER BY last_updated_at DESC
+                LIMIT ?
+            """, (person_id, platform, limit))
+            return [self._row_to_conversation(row) for row in cursor.fetchall()]
+
+    def get_ongoing_conversations(self, platform: str = 'twitter', limit: int = 20) -> List[ConversationRecord]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM conversation_records
+                WHERE platform = ? AND state = 'ongoing'
+                ORDER BY last_updated_at DESC
+                LIMIT ?
+            """, (platform, limit))
+            return [self._row_to_conversation(row) for row in cursor.fetchall()]
+
+    def update_conversation(self, conv: ConversationRecord):
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE conversation_records SET
+                    topic = ?,
+                    summary = ?,
+                    turn_count = ?,
+                    state = ?,
+                    last_updated_at = ?
+                WHERE id = ?
+            """, (
+                conv.topic,
+                conv.summary,
+                conv.turn_count,
+                conv.state,
+                datetime.now().isoformat(),
+                conv.id
+            ))
+
+    def _row_to_conversation(self, row) -> ConversationRecord:
+        return ConversationRecord(
+            id=row['id'],
+            person_id=row['person_id'],
+            platform=row['platform'],
+            post_id=row['post_id'],
+            conversation_type=row['conversation_type'],
+            topic=row['topic'],
+            summary=row['summary'] or "",
+            turn_count=row['turn_count'],
+            state=row['state'],
+            started_at=datetime.fromisoformat(row['started_at']) if row['started_at'] else datetime.now(),
+            last_updated_at=datetime.fromisoformat(row['last_updated_at']) if row['last_updated_at'] else datetime.now()
+        )
 
 
 def generate_id() -> str:

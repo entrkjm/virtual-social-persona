@@ -36,9 +36,22 @@ class TweetData(TypedDict, total=False):
     """통합 트윗 데이터 구조 (twikit/Twitter API v2 공용)"""
     id: str
     user: str
+    user_id: str
     text: str
     created_at: str
     engagement: TweetEngagement
+
+
+class NotificationData(TypedDict, total=False):
+    """알림 데이터 구조 (Social v2)"""
+    id: str
+    type: str  # 'mention', 'reply', 'quote', 'like', 'retweet', 'follow'
+    from_user: str
+    from_user_id: str
+    tweet_id: Optional[str]
+    tweet_text: Optional[str]
+    message: str
+    timestamp: int
 
 
 
@@ -358,6 +371,66 @@ def get_mentions(count: int = 20):
         return _run_async(_get_mentions_twikit(count))
     except Exception as e:
         print(f"[MENTIONS] failed: {e}")
+        return []
+
+
+# ==================== Social v2: Full Notifications ====================
+
+def _classify_notification_type(notif) -> str:
+    """알림 타입 분류 (twikit notification object 기반)"""
+    msg = (notif.message or "").lower()
+
+    if "replied" in msg or "reply" in msg:
+        return "reply"
+    elif "quoted" in msg or "quote" in msg:
+        return "quote"
+    elif "mentioned" in msg or "mention" in msg:
+        return "mention"
+    elif "liked" in msg or "like" in msg:
+        return "like"
+    elif "retweeted" in msg or "retweet" in msg:
+        return "retweet"
+    elif "followed" in msg or "follow" in msg:
+        return "follow"
+    else:
+        return "unknown"
+
+
+async def _get_all_notifications_twikit(count: int = 40) -> List[NotificationData]:
+    """모든 알림 가져오기 (Social v2)"""
+    async def _do():
+        client = await _get_twikit_client()
+        notifications = await client.get_notifications('All', count=count)
+        results: List[NotificationData] = []
+
+        for notif in notifications:
+            notif_type = _classify_notification_type(notif)
+
+            data: NotificationData = {
+                "id": str(notif.id) if hasattr(notif, 'id') else str(hash(notif.message)),
+                "type": notif_type,
+                "from_user": notif.from_user.screen_name if notif.from_user else "unknown",
+                "from_user_id": notif.from_user.id if notif.from_user else "",
+                "message": notif.message or "",
+                "timestamp": notif.timestamp_ms if hasattr(notif, 'timestamp_ms') else 0
+            }
+
+            if notif.tweet:
+                data["tweet_id"] = notif.tweet.id
+                data["tweet_text"] = notif.tweet.text
+
+            results.append(data)
+
+        return results
+    return await _with_retry(_do)
+
+
+def get_all_notifications(count: int = 40) -> List[NotificationData]:
+    """모든 알림 가져오기 (Social v2 진입점)"""
+    try:
+        return _run_async(_get_all_notifications_twikit(count))
+    except Exception as e:
+        print(f"[NOTIFICATIONS] failed: {e}")
         return []
 
 
