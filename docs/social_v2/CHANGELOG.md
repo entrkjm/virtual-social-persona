@@ -87,6 +87,45 @@ agent/platforms/twitter/modes/social_v2/
 
 ---
 
+## 2026-01-21: FollowEngine 통합
+
+### 변경사항
+
+**기존 플레이스홀더 → 정교한 FollowEngine 통합**
+
+| 구분 | 기존 (플레이스홀더) | 통합 후 |
+|------|---------------------|---------|
+| 판단 | 30% 랜덤 확률 | 점수 기반 (base 50 + bonuses) |
+| 봇 필터링 | ❌ | ✅ (프로필/바이오/팔로워비율/계정나이) |
+| 지연 큐 | ❌ (즉시 실행) | ✅ (30-300초 후 실행) |
+| 일일 한도 | ❌ | ✅ (기본 20개) |
+| Rate Limiting | ❌ | ✅ (연속 3회 후 쿨다운) |
+
+### 수정된 파일
+
+**scenarios/notification/new_follower.py**
+- `FollowEngine` import (from `social/follow_engine.py`)
+- `_judge()`: `follow_engine.should_follow()` 호출
+- `_execute_action()`: 지연 큐 사용 (`queue_follow()`)
+- 새 메서드:
+  - `process_follow_queue()`: 큐 처리 (외부 호출용)
+  - `get_queue_status()`: 상태 조회
+
+### 테스트 결과
+
+```
+Bot-like user: action=skip, reason=프로필 이미지 없음  ← 봇 필터링 작동
+Normal user: action=skip, reason=확률 미통과 (30.0%), score=100.0  ← 점수 계산 작동
+```
+
+### Git 커밋
+
+3. `Integrate existing FollowEngine into social_v2`
+   - 점수 기반 팔로우 판단
+   - 봇 필터링 + 지연 큐
+
+---
+
 ## 향후 작업 (미구현)
 
 - [ ] `main.py` bot loop에 SocialEngineV2 연결

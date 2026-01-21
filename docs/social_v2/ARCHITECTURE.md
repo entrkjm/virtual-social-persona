@@ -124,6 +124,48 @@ normal: 50-100자
 long:   100-150자
 ```
 
+### NewFollowerScenario + FollowEngine
+
+기존 `social/follow_engine.py` 통합:
+
+```python
+# NewFollowerScenario._judge()
+def _judge(self, context):
+    # 아는 사람 → 즉시 팔로우백
+    if person.tier in ('familiar', 'friend'):
+        return {'action': 'follow', 'use_queue': False}
+
+    # FollowEngine으로 판단 위임
+    follow_decision = self.follow_engine.should_follow(user_info, interaction_context)
+    # → 점수 계산 + 봇 필터링 + 확률 결정
+```
+
+**FollowEngine 점수 계산:**
+```
+base_score:        50
+follows_me_bonus: +30  (맞팔)
+keyword_bonus:    +10  (바이오에 관심 키워드)
+interaction:      +5×N (상호작용 횟수, 최대 +20)
+follower_tier:    +5~10 (팔로워 수)
+profile_bonus:    +5   (프로필 완성도)
+───────────────────────
+threshold:        40   (이상이면 팔로우 대상)
+```
+
+**봇 필터링:**
+- 프로필 이미지 없음 → skip
+- 바이오 5자 미만 → skip
+- 팔로워/팔로잉 비율 < 0.1 → skip
+- 계정 나이 < 30일 → skip
+- 팔로잉 > 5000 → skip
+
+**지연 큐:**
+```python
+# 즉시 실행 X → 큐에 추가
+self.follow_engine.queue_follow(user_id, screen_name)
+# → 30-300초 후 실행 (process_queue() 호출 시)
+```
+
 ---
 
 ## 데이터 스키마
@@ -218,6 +260,7 @@ class ConversationRecord:
 ### 공유하는 것
 - `agent/memory/database.py` (MemoryDatabase)
 - `agent/platforms/twitter/api/social.py` (Twitter API)
+- `agent/platforms/twitter/modes/social/follow_engine.py` (FollowEngine)
 - `core/llm.py` (LLM 클라이언트)
 - `personas/*/` (페르소나 설정)
 
