@@ -100,9 +100,10 @@ quip_category: 짧은 반응(1-15자)으로 충분한 경우 해당 카테고리
             perception = json.loads(clean_response)
             perception["tweet_length"] = tweet_length
 
-            # response_type 결정 (config-driven)
+            # response_type 결정 (config-driven) - social/config.yaml에서 response_strategy 읽기
+            social_config = active_persona.platform_configs.get('twitter', {}).get('modes', {}).get('social', {}).get('config', {})
             perception["response_type"] = InteractionIntelligence._determine_response_type(
-                perception, active_persona.behavior
+                perception, social_config
             )
 
             return perception
@@ -340,8 +341,9 @@ JSON List만 출력하세요.
                 original_post = next((p for i, p in candidates_for_llm if i == idx), None)
                 if original_post:
                     item['tweet_length'] = len(original_post.text)
+                    social_config = active_persona.platform_configs.get('twitter', {}).get('modes', {}).get('social', {}).get('config', {})
                     item['response_type'] = InteractionIntelligence._determine_response_type(
-                        item, active_persona.behavior
+                        item, social_config
                     )
                     results.append(item)
 

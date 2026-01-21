@@ -36,7 +36,13 @@ behavior:
   # Behavior Engine V2: 가산 확률 모델 (Additive Model)
   probability_model:
     base_probability: 0.50       # 기본 확률 (50%)
-    
+
+    # 행동별 반영 비율
+    action_ratios:
+      like: 1.0
+      repost: 0.8
+      comment: 0.6
+
     # 상황별 가산점 (Modifiers)
     modifiers:
       praise: 0.15
