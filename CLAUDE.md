@@ -333,39 +333,105 @@ config/active_persona.yaml              # 현재 활성 페르소나 지정
 personas/                               # 페르소나 설정 (계층 구조)
 ├── _template/                          # 페르소나 템플릿
 └── chef_choi/                          # 활성 페르소나
-    ├── identity.yaml                   # 핵심 정체성 (이름, 도메인, 키워드, 성격)
-    ├── speech_style.yaml               # 말투 패턴 & 시그니처
-    ├── behavior.yaml                   # 가산 확률 모델 & 휴먼라이크 설정
+    ├── identity.yaml                   # 정체성 + 행동 확률 모델
+    ├── speech_style.yaml               # 말투 + 콘텐츠 검증 설정
     ├── mood.yaml                       # 기분 & 스케줄
     ├── core_relationships.yaml         # 핵심 관계
     ├── prompt.txt                      # 시스템 프롬프트
     └── platforms/
         └── twitter/
-            ├── config.yaml             # 플랫폼 제약
-            ├── step_schedule.yaml      # 활동 비중
+            ├── config.yaml             # 플랫폼 제약 (글자수, 금지문자)
+            ├── step_schedule.yaml      # 활동 비중 (scout/mentions/post)
             └── modes/
                 ├── casual/             # config.yaml + style.yaml
                 ├── series/             # config.yaml + style.yaml + studio.yaml
                 └── social/             # config.yaml + style.yaml + behavior.yaml
 ```
 
+### 파일별 역할
+
+| 파일 | 역할 | 새 페르소나 시 수정 필요 |
+|------|------|------------------------|
+| `identity.yaml` | 이름, 직업, 도메인, 키워드, 행동 확률 | ✅ 필수 |
+| `speech_style.yaml` | 말투 패턴, 시그니처, content_review | ✅ 필수 |
+| `prompt.txt` | LLM 시스템 프롬프트 | ✅ 필수 |
+| `mood.yaml` | 시간대별 기분, 활동 스케줄 | 선택 (기본값 OK) |
+| `core_relationships.yaml` | 특정 유저와의 관계 정의 | 선택 |
+| `platforms/twitter/modes/social/config.yaml` | quip_pool, follow 설정 | ✅ 도메인별 수정 |
+| `platforms/twitter/modes/social/style.yaml` | 답글 말투, 전문가 회피 문구 | ✅ 도메인별 수정 |
+| `platforms/twitter/modes/series/studio.yaml` | 이미지 생성 스타일 | ✅ 도메인별 수정 |
+
+### 설정 계층 (Config Hierarchy)
+
+```
+identity.yaml (Base)
+    └── behavior.probability_model     → BehaviorEngine
+    └── behavior.action_ratios         → BehaviorEngine.decide_actions()
+
+speech_style.yaml (Speech)
+    └── energy_levels                  → BaseContentGenerator (fallback)
+    └── pattern_registry               → PatternTracker
+    └── content_review                 → BaseContentGenerator (말투 검증)
+
+platforms/twitter/modes/social/
+    ├── config.yaml
+    │   └── response_strategy          → InteractionIntelligence (응답 타입 결정)
+    │   └── quip_pool                  → BaseContentGenerator (QUIP 반응)
+    │   └── follow_behavior            → FollowEngine
+    │   └── behavior_thresholds        → BehaviorEngine
+    └── style.yaml
+        └── constraints                → SocialReplyGenerator (전문가 회피)
+        └── response_types             → SocialReplyGenerator (길이/톤)
+        └── review                     → SocialReplyReviewer
+    └── behavior.yaml
+        └── interaction_patterns       → BehaviorEngine (same_user, same_post)
+        └── behavioral_rules           → BehaviorEngine (피로도, 집착)
+```
+
 ### 페르소나 이식성
 **페르소나 폴더 복사 = 완전 독립 에이전트**
 
-모든 페르소나 종속 설정이 폴더 내에 포함:
-- `identity.yaml`: 정체성 (이름, 키워드, 도메인)
-- `speech_style.yaml`: 말투, 시그니처, 패턴 레지스트리
-- `mood.yaml`: 시간대별 기분, 활동 스케줄
-- `platforms/`: 플랫폼별 제약 및 모드별 설정 (Config + Style 패턴)
-
 ```bash
 # 새 페르소나 생성
-cp -r personas/_template personas/new_persona
+cp -r personas/chef_choi personas/new_persona
+
+# 필수 수정 파일
+# 1. identity.yaml - 이름, 직업, 도메인, 키워드
+# 2. speech_style.yaml - 말투 패턴, 시그니처
+# 3. prompt.txt - 시스템 프롬프트
+# 4. platforms/twitter/modes/social/config.yaml - quip_pool (도메인 반응)
+# 5. platforms/twitter/modes/social/style.yaml - avoid_expert_phrases
+
 # active_persona.yaml 수정
-echo "active_persona: new_persona" > config/active_persona.yaml
-# 실행
-python main.py
+echo "active: new_persona" > config/active_persona.yaml
+
+# 또는 환경변수로 실행
+PERSONA_NAME=new_persona python main.py
 ```
+
+### 새 페르소나 체크리스트
+
+1. **identity.yaml**
+   - [ ] `name`, `occupation`, `nickname` 변경
+   - [ ] `domain.name`, `domain.keywords` 변경
+   - [ ] `core_keywords` 변경
+   - [ ] `agent_goal`, `agent_description` 변경
+
+2. **speech_style.yaml**
+   - [ ] `signature_phrases` 변경 (캐릭터 어록)
+   - [ ] `sentence_patterns` 변경 (말투 패턴)
+   - [ ] `reactions` 변경 (상황별 반응)
+   - [ ] `energy_levels` 비우거나 커스터마이즈 (선택)
+
+3. **prompt.txt**
+   - [ ] 전체 다시 작성
+
+4. **social/config.yaml**
+   - [ ] `quip_pool` 변경 (도메인 관련 짧은 반응)
+
+5. **social/style.yaml**
+   - [ ] `constraints.avoid_expert_phrases` 변경 ("요리사로서..." → "개발자로서...")
+   - [ ] `review.speech_examples` 변경
 
 ### Pattern Registry (speech_style.yaml)
 ```yaml
