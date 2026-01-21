@@ -105,6 +105,21 @@ class ConversationRecord:
     last_updated_at: datetime
 
 
+@dataclass
+class PostMemory:
+    """포스트에 대한 기억 / Memory about a post"""
+    post_id: str  # 플랫폼 고유 ID
+    platform: str
+    author_id: str
+    author_screen_name: str
+    content_preview: str  # 요약 또는 앞부분 (100자 제한)
+    my_reactions: List[str]  # ['like', 'reply', 'repost', 'quote']
+    my_reply_id: Optional[str]  # 내가 단 답글 ID (있으면)
+    conversation_id: Optional[str]  # 연결된 ConversationRecord ID
+    first_seen_at: datetime
+    last_interacted_at: Optional[datetime]
+
+
 class MemoryDatabase:
     def __init__(self, db_path: str = None):
         self.db_path = db_path or settings.MEMORY_DB_PATH
@@ -279,6 +294,23 @@ class MemoryDatabase:
                 )
             """)
 
+            # Post memories table (중복 반응 방지 + 대화 컨텍스트)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS post_memories (
+                    post_id TEXT NOT NULL,
+                    platform TEXT NOT NULL,
+                    author_id TEXT NOT NULL,
+                    author_screen_name TEXT NOT NULL,
+                    content_preview TEXT,
+                    my_reactions TEXT,
+                    my_reply_id TEXT,
+                    conversation_id TEXT,
+                    first_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    last_interacted_at DATETIME,
+                    PRIMARY KEY (platform, post_id)
+                )
+            """)
+
             # Indexes
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_episodes_timestamp ON episodes(timestamp)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_inspirations_tier ON inspirations(tier)")
@@ -290,6 +322,8 @@ class MemoryDatabase:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_person_memories_affinity ON person_memories(affinity)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_conversation_records_person ON conversation_records(person_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_conversation_records_state ON conversation_records(state)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_post_memories_author ON post_memories(author_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_post_memories_last_interacted ON post_memories(last_interacted_at)")
 
 
     def _migrate_db(self):
@@ -883,6 +917,162 @@ class MemoryDatabase:
             state=row['state'],
             started_at=datetime.fromisoformat(row['started_at']) if row['started_at'] else datetime.now(),
             last_updated_at=datetime.fromisoformat(row['last_updated_at']) if row['last_updated_at'] else datetime.now()
+        )
+
+    # ==================== Post Memory Methods ====================
+
+    def get_post(self, post_id: str, platform: str = 'twitter') -> Optional[PostMemory]:
+        """포스트 기억 조회"""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM post_memories WHERE platform = ? AND post_id = ?",
+                (platform, post_id)
+            )
+            row = cursor.fetchone()
+            return self._row_to_post_memory(row) if row else None
+
+    def get_or_create_post(
+        self,
+        post_id: str,
+        author_id: str,
+        author_screen_name: str,
+        content_preview: str,
+        platform: str = 'twitter'
+    ) -> PostMemory:
+        """포스트 기억 조회 또는 생성"""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM post_memories WHERE platform = ? AND post_id = ?",
+                (platform, post_id)
+            )
+            row = cursor.fetchone()
+
+            if row:
+                return self._row_to_post_memory(row)
+
+            now = datetime.now()
+            preview = content_preview[:100] if len(content_preview) > 100 else content_preview
+            post = PostMemory(
+                post_id=post_id,
+                platform=platform,
+                author_id=author_id,
+                author_screen_name=author_screen_name,
+                content_preview=preview,
+                my_reactions=[],
+                my_reply_id=None,
+                conversation_id=None,
+                first_seen_at=now,
+                last_interacted_at=None
+            )
+            cursor.execute("""
+                INSERT INTO post_memories
+                (post_id, platform, author_id, author_screen_name, content_preview, my_reactions, first_seen_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                post_id, platform, author_id, author_screen_name,
+                preview, json.dumps([]), now.isoformat()
+            ))
+            return post
+
+    def has_reacted_to_post(self, post_id: str, reaction: str, platform: str = 'twitter') -> bool:
+        """특정 반응을 이미 했는지 확인"""
+        post = self.get_post(post_id, platform)
+        if not post:
+            return False
+        return reaction in post.my_reactions
+
+    def add_post_reaction(
+        self,
+        post_id: str,
+        reaction: str,
+        platform: str = 'twitter',
+        reply_id: Optional[str] = None
+    ) -> bool:
+        """포스트에 반응 추가. 이미 있으면 False 반환."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT my_reactions, my_reply_id FROM post_memories WHERE platform = ? AND post_id = ?",
+                (platform, post_id)
+            )
+            row = cursor.fetchone()
+
+            if not row:
+                return False
+
+            reactions = json.loads(row['my_reactions']) if row['my_reactions'] else []
+            if reaction in reactions:
+                return False
+
+            reactions.append(reaction)
+            now = datetime.now().isoformat()
+
+            if reaction == 'reply' and reply_id:
+                cursor.execute("""
+                    UPDATE post_memories SET
+                        my_reactions = ?, my_reply_id = ?, last_interacted_at = ?
+                    WHERE platform = ? AND post_id = ?
+                """, (json.dumps(reactions), reply_id, now, platform, post_id))
+            else:
+                cursor.execute("""
+                    UPDATE post_memories SET
+                        my_reactions = ?, last_interacted_at = ?
+                    WHERE platform = ? AND post_id = ?
+                """, (json.dumps(reactions), now, platform, post_id))
+
+            return True
+
+    def link_post_to_conversation(self, post_id: str, conversation_id: str, platform: str = 'twitter'):
+        """포스트를 대화에 연결"""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE post_memories SET conversation_id = ?
+                WHERE platform = ? AND post_id = ?
+            """, (conversation_id, platform, post_id))
+
+    def get_posts_by_author(
+        self, author_id: str, platform: str = 'twitter', limit: int = 20
+    ) -> List[PostMemory]:
+        """특정 사용자의 포스트 기억 조회"""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM post_memories
+                WHERE platform = ? AND author_id = ?
+                ORDER BY first_seen_at DESC
+                LIMIT ?
+            """, (platform, author_id, limit))
+            return [self._row_to_post_memory(row) for row in cursor.fetchall()]
+
+    def get_reacted_posts(
+        self, reaction: str, platform: str = 'twitter', limit: int = 50
+    ) -> List[PostMemory]:
+        """특정 반응을 한 포스트들 조회"""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM post_memories
+                WHERE platform = ? AND my_reactions LIKE ?
+                ORDER BY last_interacted_at DESC
+                LIMIT ?
+            """, (platform, f'%"{reaction}"%', limit))
+            return [self._row_to_post_memory(row) for row in cursor.fetchall()]
+
+    def _row_to_post_memory(self, row) -> PostMemory:
+        return PostMemory(
+            post_id=row['post_id'],
+            platform=row['platform'],
+            author_id=row['author_id'],
+            author_screen_name=row['author_screen_name'],
+            content_preview=row['content_preview'] or "",
+            my_reactions=json.loads(row['my_reactions']) if row['my_reactions'] else [],
+            my_reply_id=row['my_reply_id'],
+            conversation_id=row['conversation_id'],
+            first_seen_at=datetime.fromisoformat(row['first_seen_at']) if row['first_seen_at'] else datetime.now(),
+            last_interacted_at=datetime.fromisoformat(row['last_interacted_at']) if row['last_interacted_at'] else None
         )
 
 
