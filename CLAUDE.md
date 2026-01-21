@@ -13,13 +13,14 @@ ActivityScheduler (수면/활동 패턴 확인)
     ↓
 step() 루프 (ModeManager에 따라 가변 간격)
     ↓
-scout_timeline (80%) | check_mentions (15%) | post_tweet (5%)
-    ↓
-Content Generation Modes:
-├─ Social Mode (답글/멘션 처리) → 6-Stage Pipeline
-├─ Casual Mode (독립 포스팅) → Trigger Engine + Post Generator
-├─ Series Mode (콘텐츠 시리즈) → Planner → Writer → Studio → Archiver
-└─ Learning Mode (트렌드 학습) → Trend Learner
+Mode Selection (activity.yaml 가중치):
+├─ Social (97%) → SocialEngineV2
+│   ├─ 60% → NotificationJourney (알림 우선)
+│   │   └─ ReceivedComment/Mentioned/Quoted/NewFollower Scenario
+│   └─ 40% → FeedJourney (피드 탐색)
+│       └─ Rule-based 분류 → 1개 선택 → LLM 판단 (1회)
+├─ Casual (2%) → Trigger Engine + Post Generator
+└─ Series (1%) → Planner → Writer → Studio → Archiver
 ```
 
 ### Mode-Based Architecture (Platform-First)
@@ -31,18 +32,42 @@ Content Generation Modes:
 | **Series** | 콘텐츠 시리즈 | `engine.py`, `planner.py`, `writer.py`, `studio/` | 스케줄링된 포스팅 |
 | **Learning** | 트렌드/지식 습득 | `trend_learner.py` | 주기적 트렌드 수집 |
 
-### 6-Stage Pipeline (Interaction Backbone)
+### Social Engine V2 (Scenario-Based)
 
-Social Mode 내에서 실행되는 상호작용 백본:
+Social Mode의 새로운 시나리오 기반 아키텍처:
 
-| Stage | 담당 | 역할 |
-|-------|------|------|
-| Scout | `agent/bot.py` | 4-Layer 키워드로 트윗 검색 |
-| Perceive | `agent/core/interaction_intelligence.py` | LLM으로 트윗 의미/감정/의도 분석 + ResponseType 결정 |
-| Behavior | `agent/core/behavior_engine.py` | 확률 기반 사람다운 판단 (기분/현타/피로) + 워밍업/지연/버스트 방지 |
-| Judge | `agent/core/base_generator.py` + 모드별 생성기 | ResponseType 기반 콘텐츠 생성 + QUIP Pool + 검증 |
-| Action | `platforms/twitter/social.py` | Twitter API 호출 (액션 지연 적용) |
-| Follow | `agent/core/follow_engine.py` | 점수 기반 팔로우 판단 + 지연 실행 |
+```
+SocialEngineV2.step()
+    ↓
+┌─ 60% → NotificationJourney
+│   └─ 알림 확인 → 시나리오 매칭 → 실행
+│       ├─ ReceivedCommentScenario (내 글에 댓글)
+│       ├─ MentionedScenario (멘션)
+│       ├─ QuotedScenario (인용)
+│       └─ NewFollowerScenario (팔로우)
+│
+└─ 40% → FeedJourney
+    └─ Rule-based 분류 (LLM 0회) → 1개 선택 → LLM 판단 (1회)
+        ├─ FamiliarPersonScenario (아는 사람 글)
+        └─ InterestingPostScenario (관심 키워드 매칭)
+```
+
+| 컴포넌트 | 위치 | 역할 |
+|---------|------|------|
+| SocialEngineV2 | `modes/social/engine.py` | 통합 진입점, Journey 오케스트레이션 |
+| NotificationJourney | `modes/social/journeys/notification.py` | 알림 기반 시나리오 선택 |
+| FeedJourney | `modes/social/journeys/feed.py` | 피드 분류 + 우선순위 선택 |
+| EngagementJudge | `modes/social/judgment/engagement_judge.py` | LLM 기반 행동 판단 |
+| ReplyGenerator | `modes/social/judgment/reply_generator.py` | 답글 생성 |
+| PersonMemory | `agent/memory/database.py` | 사람 기억 (tier/affinity 기반) |
+
+**핵심 차이 (Legacy vs V2)**:
+| 항목 | Legacy | V2 |
+|------|--------|-----|
+| LLM 호출 | 트윗당 1회 (8-9회) | 선택된 1개만 (1-2회) |
+| 진입점 | Feed 우선 | Notification 우선 (60%) |
+| 사람 기억 | 세션 기반 | PersonMemory (DB, tier 승격) |
+| 팔로우 | 별도 로직 | 시나리오 내 통합 |
 
 ## 4-Layer Intelligence
 
@@ -341,11 +366,11 @@ personas/                               # 페르소나 설정 (계층 구조)
     └── platforms/
         └── twitter/
             ├── config.yaml             # 플랫폼 제약 (글자수, 금지문자)
-            ├── step_schedule.yaml      # 활동 비중 (scout/mentions/post)
+            ├── activity.yaml           # 모드 가중치 + human-like + 스텝 간격
             └── modes/
                 ├── casual/             # config.yaml + style.yaml
                 ├── series/             # config.yaml + style.yaml + studio.yaml
-                └── social/             # config.yaml + style.yaml + behavior.yaml
+                └── social/             # config.yaml + style.yaml (통합)
 ```
 
 ### 파일별 역할
@@ -357,7 +382,8 @@ personas/                               # 페르소나 설정 (계층 구조)
 | `prompt.txt` | LLM 시스템 프롬프트 | ✅ 필수 |
 | `mood.yaml` | 시간대별 기분, 활동 스케줄 | 선택 (기본값 OK) |
 | `core_relationships.yaml` | 특정 유저와의 관계 정의 | 선택 |
-| `platforms/twitter/modes/social/config.yaml` | quip_pool, follow 설정 | ✅ 도메인별 수정 |
+| `platforms/twitter/activity.yaml` | 모드 가중치, human-like 타이밍 | ✅ 성격별 조정 |
+| `platforms/twitter/modes/social/config.yaml` | quip_pool, follow, interaction_patterns | ✅ 도메인별 수정 |
 | `platforms/twitter/modes/social/style.yaml` | 답글 말투, 전문가 회피 문구 | ✅ 도메인별 수정 |
 | `platforms/twitter/modes/series/studio.yaml` | 이미지 생성 스타일 | ✅ 도메인별 수정 |
 
@@ -367,25 +393,28 @@ personas/                               # 페르소나 설정 (계층 구조)
 identity.yaml (Base)
     └── behavior.probability_model     → BehaviorEngine
     └── behavior.action_ratios         → BehaviorEngine.decide_actions()
+    └── core_keywords                  → SocialEngineV2 (FeedJourney 분류)
 
 speech_style.yaml (Speech)
-    └── energy_levels                  → BaseContentGenerator (fallback)
     └── pattern_registry               → PatternTracker
     └── content_review                 → BaseContentGenerator (말투 검증)
 
+platforms/twitter/activity.yaml (Activity - V2)
+    └── mode_weights                   → 모드 선택 (social/casual/series)
+    └── social.journey_weights         → Journey 선택 (notification/feed)
+    └── human_like                     → 읽기/생각/타이핑/전환 딜레이
+    └── step_interval                  → 스텝 간격 + 워밍업
+
 platforms/twitter/modes/social/
-    ├── config.yaml
-    │   └── response_strategy          → InteractionIntelligence (응답 타입 결정)
-    │   └── quip_pool                  → BaseContentGenerator (QUIP 반응)
+    ├── config.yaml (통합)
+    │   └── response_strategy          → V2 ReplyGenerator (응답 타입 결정)
+    │   └── quip_pool                  → V2 ReplyGenerator (QUIP 반응)
+    │   └── interaction_patterns       → same_user, same_post 제한
+    │   └── behavioral_rules           → 피로도, 집착 주제
     │   └── follow_behavior            → FollowEngine
-    │   └── behavior_thresholds        → BehaviorEngine
     └── style.yaml
-        └── constraints                → SocialReplyGenerator (전문가 회피)
-        └── response_types             → SocialReplyGenerator (길이/톤)
-        └── review                     → SocialReplyReviewer
-    └── behavior.yaml
-        └── interaction_patterns       → BehaviorEngine (same_user, same_post)
-        └── behavioral_rules           → BehaviorEngine (피로도, 집착)
+        └── constraints                → ReplyGenerator (전문가 회피)
+        └── response_types             → ReplyGenerator (길이/톤)
 ```
 
 ### 페르소나 이식성
