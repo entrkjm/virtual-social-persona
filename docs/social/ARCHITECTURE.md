@@ -253,7 +253,7 @@ class ConversationRecord:
 ## 기존 시스템과의 관계
 
 ### 공존 가능
-- `social_v2/`는 `social/`과 별개 폴더
+- `social/`는 기존 social 폴더를 대체
 - `main.py`에서 선택적 사용 가능
 - DB 테이블은 추가 (기존 테이블 유지)
 

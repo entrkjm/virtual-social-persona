@@ -16,7 +16,7 @@
 ### 추가된 파일
 
 ```
-agent/platforms/twitter/modes/social_v2/
+agent/platforms/twitter/modes/social/
 ├── __init__.py
 ├── engine.py                    # SocialEngineV2 (통합 진입점)
 ├── journeys/
@@ -120,7 +120,7 @@ Normal user: action=skip, reason=확률 미통과 (30.0%), score=100.0  ← 점�
 
 ### Git 커밋
 
-3. `Integrate existing FollowEngine into social_v2`
+3. `Integrate existing FollowEngine into social`
    - 점수 기반 팔로우 판단
    - 봇 필터링 + 지연 큐
 
