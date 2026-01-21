@@ -273,6 +273,11 @@ def post_tweet(content: str, reply_to: str = None, media_files: List[str] = None
         raise
 
 
+def reply_to_tweet(tweet_id: str, content: str, media_files: List[str] = None) -> str:
+    """답글 별칭 / Alias for post_tweet(reply_to=...)"""
+    return post_tweet(content, reply_to=tweet_id, media_files=media_files)
+
+
 def search_tweets(query: str, count: int = 5):
     """트윗 검색 / Search tweets (with retry and query simplification)"""
     import time
@@ -326,6 +331,11 @@ def favorite_tweet(tweet_id: str) -> bool:
     except Exception as e:
         print(f"[LIKE] failed: {e}")
         return False
+
+
+def like_tweet(tweet_id: str) -> bool:
+    """좋아요 별칭 / Alias for favorite_tweet"""
+    return favorite_tweet(tweet_id)
 
 
 async def _repost_tweet_twikit(tweet_id: str):
