@@ -48,11 +48,17 @@ class FeedJourney(BaseJourney):
         memory_db: MemoryDatabase,
         platform: str = 'twitter',
         core_interests: Optional[List[str]] = None,
-        persona_config: Optional[Dict] = None
+        persona_config: Optional[Dict] = None,
+        feed_selection: Optional[Dict] = None
     ):
         super().__init__(memory_db, platform)
         self.core_interests = core_interests or []
         self.persona_config = persona_config
+        self.feed_selection = feed_selection or {}
+        self.random_discovery_prob = self.feed_selection.get(
+            'random_discovery_prob', self.RANDOM_DISCOVERY_PROB
+        )
+        self.familiar_first = self.feed_selection.get('familiar_first', True)
         self._init_scenarios()
 
     def _init_scenarios(self):
@@ -139,18 +145,28 @@ class FeedJourney(BaseJourney):
         2. interesting (관심 포스트) → 랜덤
         3. others (10% 확률) → 랜덤 발견
         """
-        # 1. 아는 사람 우선
-        if classified.familiar:
-            post, person = self._pick_best_familiar(classified.familiar)
-            return post, 'familiar_person'
+        if self.familiar_first:
+            # 1. 아는 사람 우선
+            if classified.familiar:
+                post, person = self._pick_best_familiar(classified.familiar)
+                return post, 'familiar_person'
 
-        # 2. 관심 포스트
-        if classified.interesting:
-            post = self._pick_best_interesting(classified.interesting)
-            return post, 'interesting_post'
+            # 2. 관심 포스트
+            if classified.interesting:
+                post = self._pick_best_interesting(classified.interesting)
+                return post, 'interesting_post'
+        else:
+            # 관심 포스트 우선 (familiar 우선 비활성화)
+            if classified.interesting:
+                post = self._pick_best_interesting(classified.interesting)
+                return post, 'interesting_post'
+
+            if classified.familiar:
+                post, person = self._pick_best_familiar(classified.familiar)
+                return post, 'familiar_person'
 
         # 3. 랜덤 발견 (10% 확률)
-        if classified.others and random.random() < self.RANDOM_DISCOVERY_PROB:
+        if classified.others and random.random() < self.random_discovery_prob:
             post = random.choice(classified.others)
             return post, 'interesting_post'  # 일반 포스트도 interesting 시나리오로 처리
 

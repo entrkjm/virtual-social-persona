@@ -133,8 +133,8 @@ class PersonaLoader:
                 if not p_cfg['config']:
                     p_cfg['config'] = PersonaLoader._read_yaml(os.path.join(platform_path, "platform.yaml"))
                 
-                # step_schedule.yaml
-                p_cfg['schedule'] = PersonaLoader._read_yaml(os.path.join(platform_path, "step_schedule.yaml"))
+                # activity.yaml (Social v2 통합 설정)
+                p_cfg['activity'] = PersonaLoader._read_yaml(os.path.join(platform_path, "activity.yaml"))
 
                 # behavior.yaml (platform specific override)
                 p_cfg['behavior'] = PersonaLoader._read_yaml(os.path.join(platform_path, "behavior.yaml"))

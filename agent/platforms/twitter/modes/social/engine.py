@@ -34,6 +34,7 @@ class SocialEngineV2:
         self.persona_id = persona_id
         self.persona_config = persona_config or {}
         self.platform = platform
+        self.activity_config = self.persona_config.get('activity', {})
 
         # 메모리 DB
         self.memory_db = MemoryFactory.get_memory_db(persona_id)
@@ -45,8 +46,13 @@ class SocialEngineV2:
         self.notification_journey = NotificationJourney(
             self.memory_db, platform, persona_config
         )
+        feed_selection = self.activity_config.get('social', {}).get('feed_selection', {})
         self.feed_journey = FeedJourney(
-            self.memory_db, platform, self.core_interests, persona_config
+            self.memory_db,
+            platform,
+            self.core_interests,
+            persona_config,
+            feed_selection=feed_selection
         )
 
     def _extract_core_interests(self) -> List[str]:
@@ -118,8 +124,11 @@ class SocialEngineV2:
             posts: 피드 탐색용 포스트 (없으면 알림만)
             notification_weight: 알림 확인 확률 (기본 60%)
         """
+        activity_weight = self._get_notification_weight()
+        final_weight = activity_weight if activity_weight is not None else notification_weight
+
         # 알림 우선 (notification_weight 확률)
-        if random.random() < notification_weight:
+        if random.random() < final_weight:
             result = self.run_notification_journey()
             if result and result.success:
                 return result
@@ -131,7 +140,19 @@ class SocialEngineV2:
                 return result
 
         # 둘 다 실패 시 알림 재시도 (아직 안 했다면)
-        if random.random() >= notification_weight:
+        if random.random() >= final_weight:
             return self.run_notification_journey()
 
         return None
+
+    def _get_notification_weight(self) -> Optional[float]:
+        """activity.yaml 기반 알림 가중치 계산"""
+        journey_weights = self.activity_config.get('social', {}).get('journey_weights', {})
+        if not journey_weights:
+            return None
+        notification = float(journey_weights.get('notification', 0.0))
+        feed = float(journey_weights.get('feed', 0.0))
+        total = notification + feed
+        if total <= 0:
+            return None
+        return notification / total
