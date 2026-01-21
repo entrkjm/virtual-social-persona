@@ -51,9 +51,3 @@ behavior:
       stranger: -0.10
       introversion: -0.10
       aggressive_mode: 0.30
-
-  # 콘텐츠 리뷰 레이어 설정
-  content_review:
-    enabled: true
-    fix_excessive_patterns: true
-    max_pattern_occurrences: 1

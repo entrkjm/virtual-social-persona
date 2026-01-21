@@ -99,8 +99,8 @@ class BaseContentGenerator(ABC):
         self.closer_pool = speech.get('closer_pool', [])
 
     def _load_review_config(self):
-        behavior = self.persona.behavior or {}
-        review_config = behavior.get('content_review', {})
+        speech = self.persona.speech_style or {}
+        review_config = speech.get('content_review', {})
         
         self.review_enabled = review_config.get('enabled', False)
         self.review_fix_patterns = review_config.get('fix_excessive_patterns', True)
