@@ -88,10 +88,16 @@ class NotificationJourney(BaseJourney):
         logger.info(f"[Notification] {len(classified)} actionable: {[n.scenario_type for n in classified[:10]]}")
 
         for notif in classified[:process_limit]:
-            logger.info(f"[Notification] Processing: {notif.scenario_type} from @{notif.raw.get('from_user')}")
+            from_user = notif.raw.get('from_user', 'unknown')
+            logger.info(f"[Notification] Processing: {notif.scenario_type} from @{from_user}")
             result = self._process_notification(notif)
-            if result and result.success:
-                return result
+            if result:
+                action = result.action_taken or 'none'
+                logger.info(f"[Notification] Result: @{from_user} -> {action} (success={result.success})")
+                if result.success:
+                    return result
+            else:
+                logger.info(f"[Notification] Result: @{from_user} -> failed (no result)")
 
         return None
 
