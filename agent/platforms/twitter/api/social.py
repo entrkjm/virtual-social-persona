@@ -5,6 +5,10 @@ Twitter API via Twikit
 import os
 import asyncio
 from typing import TypedDict, Optional, List
+
+# TLS fingerprint 패치 (twikit import 전에 로드)
+from . import tls_patch  # noqa: F401
+
 from twikit import Client
 from config.settings import settings
 from agent.core.logger import logger

@@ -1088,14 +1088,14 @@ class SocialAgent:
                 inspiration_topics=[]
             )
 
-            logger.info(f"[Social] Feed query={search_query} (source={source}, attempt={attempt+1})")
-            posts = self.adapter.search(search_query, count=8)
-
-            # 검색 간 딜레이 (봇 탐지 회피)
+            # 검색 간 딜레이 (봇 탐지 회피) - 첫 시도 제외
             if attempt > 0:
                 delay = random.uniform(search_interval[0], search_interval[1])
                 logger.info(f"[Social] Search interval delay: {delay:.1f}s")
                 time.sleep(delay)
+
+            logger.info(f"[Social] Feed query={search_query} (source={source}, attempt={attempt+1})")
+            posts = self.adapter.search(search_query, count=8)
 
             if posts:
                 for post in posts:
