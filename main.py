@@ -168,6 +168,7 @@ def run_with_sdk():
 
 
 from agent.core.logger import logger
+from agent.platforms.twitter.api.trends import trend_tracker
 
 
 async def run_standalone_async():
@@ -206,6 +207,17 @@ async def run_standalone_async():
                     logger.info(f"[BREAK] Taking a break for {break_duration//60}m")
                     await asyncio.sleep(break_duration)
                     continue
+
+            # Trend Learning (매 세션 시작 시, 변경 시에만 학습)
+            trend_result = trend_tracker.check_and_learn(count=5)
+            if trend_result["checked"]:
+                if trend_result["changed"]:
+                    logger.info(
+                        f"[TRENDS] New: {trend_result['new_trends'][:3]}, "
+                        f"learned {trend_result['learned']}"
+                    )
+                else:
+                    logger.debug("[TRENDS] No change since last session")
 
             # Mode Selection
             activity_cfg = persona.platform_configs.get('twitter', {}).get('activity', {})

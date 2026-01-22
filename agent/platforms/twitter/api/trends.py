@@ -119,3 +119,73 @@ def _learn_trends_async(trends: list):
             print(f"[TRENDS] Learned {learned} new topics")
     except Exception as e:
         print(f"[TRENDS] Learn failed: {e}")
+
+
+class TrendTracker:
+    """
+    트렌드 변경 감지 및 학습
+    매 세션마다 호출, 변경 없으면 스킵
+    """
+
+    def __init__(self):
+        self._previous_trends: set = set()
+
+    def check_and_learn(self, count: int = 5) -> dict:
+        """
+        트렌드 확인 → 변경 감지 → 학습
+
+        Returns:
+            {
+                "checked": bool,
+                "changed": bool,
+                "new_trends": list,
+                "learned": int
+            }
+        """
+        result = {
+            "checked": False,
+            "changed": False,
+            "new_trends": [],
+            "learned": 0
+        }
+
+        try:
+            current_trends = get_trending_topics(count=count)
+            if not current_trends:
+                return result
+
+            result["checked"] = True
+            current_set = set(current_trends)
+
+            # 변경 감지
+            new_trends = current_set - self._previous_trends
+            if not new_trends:
+                # 변경 없음 - 스킵
+                return result
+
+            result["changed"] = True
+            result["new_trends"] = list(new_trends)
+
+            # 새 트렌드만 학습
+            kb = _get_knowledge_base()
+            learned = 0
+            for keyword in list(new_trends)[:3]:
+                existing = kb.get(keyword)
+                if not existing:
+                    kb.learn_topic(keyword)
+                    learned += 1
+
+            result["learned"] = learned
+
+            # 이전 트렌드 업데이트
+            self._previous_trends = current_set
+
+            return result
+
+        except Exception as e:
+            print(f"[TrendTracker] Error: {e}")
+            return result
+
+
+# 싱글톤 인스턴스
+trend_tracker = TrendTracker()
