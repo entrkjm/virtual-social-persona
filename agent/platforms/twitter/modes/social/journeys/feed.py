@@ -68,7 +68,8 @@ class FeedJourney(BaseJourney):
         occupation = identity.get('occupation', '')
         personality = identity.get('personality', {})
         persona_brief = personality.get('brief', occupation) if personality else occupation
-        self.feed_filter = FeedFilter(persona_brief, self.core_interests)
+        language_filter = self.feed_selection.get('language_filter')
+        self.feed_filter = FeedFilter(persona_brief, self.core_interests, language_filter)
 
         self._init_scenarios()
 

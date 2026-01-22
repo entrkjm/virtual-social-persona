@@ -14,8 +14,13 @@ from core.llm import llm_client
 
 logger = logging.getLogger("agent")
 
-# 한글 유니코드 범위: AC00-D7A3 (가-힣)
-_KOREAN_PATTERN = re.compile(r'[가-힣]')
+# 언어별 패턴
+_LANGUAGE_PATTERNS = {
+    'korean': re.compile(r'[가-힣]'),
+    'english': re.compile(r'[a-zA-Z]{3,}'),
+    'japanese': re.compile(r'[\u3040-\u309F\u30A0-\u30FF]'),
+    'chinese': re.compile(r'[\u4e00-\u9fff]'),
+}
 
 
 @dataclass
@@ -33,14 +38,22 @@ class FeedFilter:
     16개 포스트를 한 번에 보내서 pass/fail 판단
     """
 
-    def __init__(self, persona_brief: str, core_interests: List[str]):
+    def __init__(
+        self,
+        persona_brief: str,
+        core_interests: List[str],
+        language_filter: Optional[str] = None
+    ):
         """
         Args:
             persona_brief: 페르소나 한줄 설명 (예: "요리사, 음식과 레시피에 관심")
             core_interests: 핵심 관심 키워드
+            language_filter: 언어 필터 ("korean", "english", etc.) - None이면 필터 안함
         """
         self.persona_brief = persona_brief
         self.core_interests = core_interests
+        self.language_filter = language_filter
+        self._lang_pattern = _LANGUAGE_PATTERNS.get(language_filter) if language_filter else None
 
     def _build_system_prompt(self) -> str:
         interests = ", ".join(self.core_interests[:5])
@@ -81,24 +94,31 @@ class FeedFilter:
             return []
 
         results = []
-        korean_posts = []
+        filtered_posts = []
 
-        # 1차: 한글 필터 (LLM 호출 전 제외)
-        for post in posts:
-            post_id = str(post.get('id', ''))
-            text = post.get('text', '')
-            if not _KOREAN_PATTERN.search(text):
-                results.append(FilterResult(post_id=post_id, passed=False, reason='no_korean'))
-            else:
-                korean_posts.append(post)
+        # 1차: 언어 필터 (설정된 경우만)
+        if self._lang_pattern:
+            for post in posts:
+                post_id = str(post.get('id', ''))
+                text = post.get('text', '')
+                if not self._lang_pattern.search(text):
+                    results.append(FilterResult(
+                        post_id=post_id,
+                        passed=False,
+                        reason=f'no_{self.language_filter}'
+                    ))
+                else:
+                    filtered_posts.append(post)
 
-        if not korean_posts:
-            logger.info(f"[FeedFilter] All {len(posts)} posts filtered (no Korean)")
-            return results
+            if not filtered_posts:
+                logger.info(f"[FeedFilter] All {len(posts)} posts filtered (no {self.language_filter})")
+                return results
+        else:
+            filtered_posts = posts
 
-        # 포스트 요약 생성 (한글 포스트만)
+        # 포스트 요약 생성
         post_summaries = []
-        for i, post in enumerate(korean_posts):
+        for i, post in enumerate(filtered_posts):
             post_id = post.get('id', str(i))
             user = post.get('user', 'unknown')
             text = (post.get('text', '')[:100]).replace('\n', ' ')
@@ -108,14 +128,14 @@ class FeedFilter:
 
         try:
             response = llm_client.generate(prompt, system_prompt=self._build_system_prompt())
-            llm_results = self._parse_response(response, korean_posts)
-            # 한글 필터 결과 + LLM 필터 결과 병합
+            llm_results = self._parse_response(response, filtered_posts)
+            # 언어 필터 결과 + LLM 필터 결과 병합
             results.extend(llm_results)
             return results
         except Exception as e:
             logger.error(f"[FeedFilter] LLM failed: {e}")
-            # 실패 시 한글 포스트는 통과 처리
-            results.extend([FilterResult(post_id=p.get('id', ''), passed=True, reason='filter_error') for p in korean_posts])
+            # 실패 시 필터 통과한 포스트는 통과 처리
+            results.extend([FilterResult(post_id=p.get('id', ''), passed=True, reason='filter_error') for p in filtered_posts])
             return results
 
     def _parse_response(self, response: str, posts: List[Dict]) -> List[FilterResult]:
