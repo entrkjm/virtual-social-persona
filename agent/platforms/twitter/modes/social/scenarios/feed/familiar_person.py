@@ -111,6 +111,12 @@ class FamiliarPersonScenario(BaseScenario):
             success = twitter_api.like_tweet(tweet_id)
             return ScenarioResult(success=success, action='like')
 
+        if action == 'repost':
+            success = twitter_api.repost_tweet(tweet_id)
+            if success:
+                twitter_api.like_tweet(tweet_id)
+            return ScenarioResult(success=success, action='repost')
+
         if action == 'reply':
             recent_replies = self.get_recent_replies(limit=5)
             reply_content = self.reply_gen.generate(
@@ -143,7 +149,7 @@ class FamiliarPersonScenario(BaseScenario):
 
     def _update_memory(self, context: ScenarioContext, result: ScenarioResult):
         """메모리 업데이트"""
-        if context.person and result.action in ('like', 'reply'):
+        if context.person and result.action in ('like', 'reply', 'repost'):
             self.update_person_after_interaction(
                 context.person,
                 interaction_type=result.action

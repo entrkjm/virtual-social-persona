@@ -37,11 +37,12 @@ class EngagementJudge:
 
 판단 기준:
 1. 관계: 아는 사람이면 더 적극적으로 반응
-2. 내용: 질문이면 답변, 공감가면 좋아요
+2. 내용: 질문이면 답변, 공감가면 좋아요, 공유하고 싶으면 리포스트
 3. 컨텍스트: 내 글에 대한 반응이면 더 신경 써서 대응
+4. 리포스트: 정말 좋은 정보거나 팔로워들에게 공유하고 싶을 때 (빈도 낮게)
 
 반드시 아래 JSON 형식으로만 응답하세요:
-{"action": "like|reply|skip", "confidence": 0.0-1.0, "reason": "짧은 이유", "reply_type": "short|normal|long 또는 null"}"""
+{"action": "like|reply|repost|skip", "confidence": 0.0-1.0, "reason": "짧은 이유", "reply_type": "short|normal|long 또는 null"}"""
 
     def judge(
         self,

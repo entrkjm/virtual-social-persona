@@ -103,6 +103,14 @@ class InterestingPostScenario(BaseScenario):
             logger.info(f"[Scenario:InterestingPost] Like result: {success}")
             return ScenarioResult(success=success, action='like')
 
+        if action == 'repost':
+            logger.info(f"[Scenario:InterestingPost] Action: repost tweet_id={tweet_id}")
+            success = twitter_api.repost_tweet(tweet_id)
+            logger.info(f"[Scenario:InterestingPost] Repost result: {success}")
+            if success:
+                twitter_api.like_tweet(tweet_id)
+            return ScenarioResult(success=success, action='repost')
+
         if action == 'reply':
             logger.info(f"[Scenario:InterestingPost] Action: reply (type={decision.get('reply_type', 'normal')})")
             recent_replies = self.get_recent_replies(limit=5)
@@ -137,7 +145,7 @@ class InterestingPostScenario(BaseScenario):
 
     def _update_memory(self, context: ScenarioContext, result: ScenarioResult):
         """메모리 업데이트"""
-        if context.person and result.action in ('like', 'reply'):
+        if context.person and result.action in ('like', 'reply', 'repost'):
             self.update_person_after_interaction(
                 context.person,
                 interaction_type=result.action
