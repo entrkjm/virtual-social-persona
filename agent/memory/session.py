@@ -13,7 +13,7 @@ class AgentMemory:
         self.memory = self._load()
 
     def _load(self):
-        default = {"interactions": [], "facts": {}, "likes": [], "curiosity": {}, "archive": [], "responded_mentions": []}
+        default = {"interactions": [], "facts": {}, "likes": [], "curiosity": {}, "archive": [], "responded_mentions": [], "processed_notifications": {}}
         if os.path.exists(self.storage_path):
             try:
                 with open(self.storage_path, "r", encoding="utf-8") as f:
@@ -85,6 +85,64 @@ class AgentMemory:
             if len(self.memory["responded_mentions"]) > 500:
                 self.memory["responded_mentions"] = self.memory["responded_mentions"][-500:]
             self._save()
+
+    # === Notification Processing (Social v2) ===
+
+    def mark_notification_processed(self, notif_id: str, notif_type: str, from_user_id: str, action: str):
+        """알림 처리 완료 기록"""
+        if "processed_notifications" not in self.memory:
+            self.memory["processed_notifications"] = {}
+
+        notif_id_str = str(notif_id)
+
+        if notif_id_str in self.memory["processed_notifications"]:
+            existing = self.memory["processed_notifications"][notif_id_str]
+            if action not in existing.get("actions_taken", []):
+                existing["actions_taken"].append(action)
+                existing["last_processed_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            self.memory["processed_notifications"][notif_id_str] = {
+                "type": notif_type,
+                "from_user_id": str(from_user_id),
+                "actions_taken": [action],
+                "processed_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+
+        # 최대 500개 유지 (오래된 것 삭제)
+        if len(self.memory["processed_notifications"]) > 500:
+            sorted_notifs = sorted(
+                self.memory["processed_notifications"].items(),
+                key=lambda x: x[1].get("processed_at", ""),
+                reverse=True
+            )
+            self.memory["processed_notifications"] = dict(sorted_notifs[:500])
+
+        self._save()
+
+    def is_notification_processed(self, notif_id: str) -> bool:
+        """알림이 이미 처리되었는지 확인"""
+        if "processed_notifications" not in self.memory:
+            return False
+        return str(notif_id) in self.memory["processed_notifications"]
+
+    def get_notification_actions(self, notif_id: str) -> list:
+        """알림에 대해 취한 액션 목록"""
+        if "processed_notifications" not in self.memory:
+            return []
+        notif = self.memory["processed_notifications"].get(str(notif_id), {})
+        return notif.get("actions_taken", [])
+
+    def is_user_already_followed_back(self, from_user_id: str) -> bool:
+        """특정 유저에게 이미 팔로우백 했는지 확인"""
+        if "processed_notifications" not in self.memory:
+            return False
+        from_user_id_str = str(from_user_id)
+        for notif in self.memory["processed_notifications"].values():
+            if (notif.get("type") == "follow" and
+                notif.get("from_user_id") == from_user_id_str and
+                "followed_back" in notif.get("actions_taken", [])):
+                return True
+        return False
 
     def get_recent_context(self, limit=5):
         """LLM 프롬프트용 최근 활동 / Recent activity for prompt"""

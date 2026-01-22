@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 from .base import BaseJourney, JourneyResult
 from agent.memory.database import MemoryDatabase
+from agent.memory.session import agent_memory
 from agent.platforms.twitter.api.social import get_all_notifications, NotificationData
 
 logger = logging.getLogger("agent")
@@ -95,13 +96,28 @@ class NotificationJourney(BaseJourney):
     def _classify_and_prioritize(
         self, notifications: List[NotificationData]
     ) -> List[ProcessedNotification]:
-        """알림 분류 + 우선순위 정렬"""
+        """알림 분류 + 우선순위 정렬 + 이미 처리된 알림 필터링"""
         processed = []
         type_counts = {}
+        skipped_count = 0
 
         for notif in notifications:
+            notif_id = notif.get('id', '')
             notif_type = notif.get('type', 'unknown')
+            from_user_id = notif.get('from_user_id', '')
+
             type_counts[notif_type] = type_counts.get(notif_type, 0) + 1
+
+            # 이미 처리된 알림 스킵
+            if agent_memory.is_notification_processed(notif_id):
+                skipped_count += 1
+                continue
+
+            # follow의 경우 이미 팔로우백한 유저 스킵
+            if notif_type == 'follow' and agent_memory.is_user_already_followed_back(from_user_id):
+                skipped_count += 1
+                continue
+
             priority = self.SCENARIO_PRIORITY.get(notif_type, 99)
 
             # 처리 가능한 시나리오만 포함
@@ -112,7 +128,7 @@ class NotificationJourney(BaseJourney):
                     priority=priority
                 ))
 
-        logger.debug(f"[Notification] Type breakdown: {type_counts}")
+        logger.debug(f"[Notification] Type breakdown: {type_counts}, skipped: {skipped_count}")
         processed.sort(key=lambda x: x.priority)
         return processed
 
@@ -122,8 +138,18 @@ class NotificationJourney(BaseJourney):
         if not scenario:
             return None
 
+        notif_id = notif.raw.get('id', '')
+        notif_type = notif.scenario_type
+        from_user_id = notif.raw.get('from_user_id', '')
+
         try:
             result = scenario.execute(notif.raw)
+
+            # 처리 완료 기록
+            if result:
+                action = result.action or 'skipped'
+                agent_memory.mark_notification_processed(notif_id, notif_type, from_user_id, action)
+
             return JourneyResult(
                 success=result.success if result else False,
                 scenario_executed=notif.scenario_type,
