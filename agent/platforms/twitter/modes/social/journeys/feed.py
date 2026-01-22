@@ -11,6 +11,7 @@ from dataclasses import dataclass
 
 from .base import BaseJourney, JourneyResult
 from agent.memory.database import MemoryDatabase, PersonMemory
+from agent.memory.session import agent_memory
 from ..judgment.feed_filter import FeedFilter
 
 logger = logging.getLogger("agent")
@@ -117,14 +118,22 @@ class FeedJourney(BaseJourney):
         - familiar: user_id가 person_memories에 있고 tier가 familiar/friend
         - interesting: 텍스트에 core_interests 키워드 포함
         - others: 나머지
+        - 이미 상호작용한 포스트는 제외
         """
         familiar = []
         interesting = []
         others = []
+        skipped_interacted = 0
 
         for post in posts:
+            post_id = post.get('id')
             user_id = post.get('user_id') or post.get('user', '')
             screen_name = post.get('user', '')
+
+            # 이미 상호작용한 포스트 스킵
+            if post_id and agent_memory.is_interacted(post_id):
+                skipped_interacted += 1
+                continue
 
             # 1. 아는 사람인지 확인
             person = self.memory_db.get_person(user_id, self.platform)
@@ -140,6 +149,9 @@ class FeedJourney(BaseJourney):
 
             # 3. 나머지
             others.append(post)
+
+        if skipped_interacted > 0:
+            logger.info(f"[Feed] Skipped {skipped_interacted} already interacted posts")
 
         return ClassifiedPosts(familiar=familiar, interesting=interesting, others=others)
 

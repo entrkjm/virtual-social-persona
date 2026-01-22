@@ -5,12 +5,16 @@ LLM 기반 답글 생성
 EngagementJudge가 reply로 결정한 후 호출
 """
 import logging
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Set
 
 from core.llm import llm_client
 from agent.memory.database import PersonMemory
 
 logger = logging.getLogger("agent")
+
+# 유사도 체크용 상수
+SIMILARITY_THRESHOLD = 0.5  # 50% 이상 겹치면 재생성
+MAX_REGENERATION_ATTEMPTS = 3
 
 
 class ReplyGenerator:
@@ -64,17 +68,64 @@ class ReplyGenerator:
             recent_replies: 최근 답글 5개 (말투 반복 방지용)
         """
         logger.debug(f"[ReplyGen] Generating: type={reply_type}, person={person.screen_name if person else 'N/A'}")
-        prompt = self._build_prompt(post_text, person, reply_type, context, recent_replies)
 
-        try:
-            logger.debug("[ReplyGen] Calling LLM...")
-            response = llm_client.generate(prompt, system_prompt=self.system_prompt)
-            cleaned = self._clean_response(response)
-            logger.info(f"[ReplyGen] Generated ({len(cleaned)} chars): {cleaned[:50]}...")
-            return cleaned
-        except Exception as e:
-            logger.error(f"[ReplyGen] LLM failed: {e}")
-            return ""
+        for attempt in range(MAX_REGENERATION_ATTEMPTS):
+            prompt = self._build_prompt(post_text, person, reply_type, context, recent_replies)
+
+            try:
+                logger.debug(f"[ReplyGen] Calling LLM (attempt {attempt + 1})...")
+                response = llm_client.generate(prompt, system_prompt=self.system_prompt)
+                cleaned = self._clean_response(response)
+
+                # 유사도 체크
+                if recent_replies:
+                    similarity, similar_to = self._check_similarity(cleaned, recent_replies)
+                    if similarity >= SIMILARITY_THRESHOLD:
+                        logger.warning(f"[ReplyGen] Too similar ({similarity:.0%}) to: '{similar_to[:30]}...' - regenerating")
+                        continue
+
+                logger.info(f"[ReplyGen] Generated ({len(cleaned)} chars): {cleaned[:50]}...")
+                return cleaned
+            except Exception as e:
+                logger.error(f"[ReplyGen] LLM failed: {e}")
+                return ""
+
+        logger.warning(f"[ReplyGen] Max regeneration attempts reached, using last result")
+        return cleaned if 'cleaned' in locals() else ""
+
+    def _check_similarity(self, new_reply: str, recent_replies: List[str]) -> tuple[float, str]:
+        """
+        새 답글과 최근 답글들의 유사도 체크 (단어 기반)
+
+        Returns:
+            (유사도, 가장 유사한 답글)
+        """
+        new_words = self._extract_words(new_reply)
+        if not new_words:
+            return 0.0, ""
+
+        max_similarity = 0.0
+        most_similar = ""
+
+        for recent in recent_replies:
+            recent_words = self._extract_words(recent)
+            if not recent_words:
+                continue
+
+            common = new_words & recent_words
+            similarity = len(common) / max(len(new_words), len(recent_words))
+
+            if similarity > max_similarity:
+                max_similarity = similarity
+                most_similar = recent
+
+        return max_similarity, most_similar
+
+    def _extract_words(self, text: str) -> Set[str]:
+        """텍스트에서 의미있는 단어 추출 (2자 이상)"""
+        import re
+        words = re.findall(r'[\w가-힣]+', text.lower())
+        return {w for w in words if len(w) >= 2}
 
     def _build_prompt(
         self,

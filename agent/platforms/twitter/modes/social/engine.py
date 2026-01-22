@@ -263,7 +263,9 @@ class SocialEngine:
                     if filtered_out > 0:
                         logger.info(f"[Session] Filtered out {filtered_out}/{len(posts)} posts")
 
-                    posts_to_browse = filtered_posts[:browse_count]
+                    # 우선순위 정렬 (familiar → interesting → others)
+                    sorted_posts = self._sort_posts_by_priority(filtered_posts)
+                    posts_to_browse = sorted_posts[:browse_count]
 
                 reactions = 0
 
@@ -317,17 +319,30 @@ class SocialEngine:
                 logger.warning(f"[Session] Feed error: {e}")
 
         # === Phase 3: 프로필 방문 ===
-        if self.profile_visit_enabled and get_following_list and get_user_tweets_fn and not is_warmup:
+        # 스킵 사유 로깅
+        if not self.profile_visit_enabled:
+            logger.info("[Session] ProfileVisit: disabled in config")
+        elif not get_following_list:
+            logger.info("[Session] ProfileVisit: no get_following_list function")
+        elif not get_user_tweets_fn:
+            logger.info("[Session] ProfileVisit: no get_user_tweets_fn function")
+        elif is_warmup:
+            logger.info("[Session] ProfileVisit: skipped (warmup mode)")
+        elif self.profile_visit_enabled and get_following_list and get_user_tweets_fn and not is_warmup:
             visit_cfg = self.session_config.get('profile_visit', {})
             visit_count_range = visit_cfg.get('count', [0, 2])
             visit_count = random.randint(visit_count_range[0], visit_count_range[1])
 
-            if visit_count > 0:
+            if visit_count == 0:
+                logger.info(f"[Session] ProfileVisit: visit_count=0 (random from {visit_count_range})")
+            else:
                 logger.info(f"[Session #{self.session_count}] Visiting {visit_count} profiles")
 
                 try:
                     following_list = get_following_list()
-                    if following_list:
+                    if not following_list:
+                        logger.info("[ProfileVisit] No following list returned")
+                    else:
                         for _ in range(visit_count):
                             # 탭 전환 딜레이
                             switch_delay = transitions_cfg.get('switch_tab', [2.0, 5.0])
@@ -367,6 +382,37 @@ class SocialEngine:
         )
 
         return result
+
+    def _sort_posts_by_priority(self, posts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        포스트를 우선순위로 정렬: familiar → interesting → others
+        """
+        familiar = []
+        interesting = []
+        others = []
+
+        for post in posts:
+            user_id = post.get('user_id') or post.get('user', '')
+            text = post.get('text', '').lower()
+
+            # 1. 아는 사람 체크
+            person = self.memory_db.get_person(user_id, self.platform)
+            if person and person.tier in ('familiar', 'friend'):
+                familiar.append(post)
+                continue
+
+            # 2. 관심 키워드 매칭
+            if any(kw.lower() in text for kw in self.core_interests):
+                interesting.append(post)
+                continue
+
+            # 3. 나머지
+            others.append(post)
+
+        sorted_posts = familiar + interesting + others
+        if familiar or interesting:
+            logger.info(f"[Session] Posts sorted: {len(familiar)} familiar, {len(interesting)} interesting, {len(others)} others")
+        return sorted_posts
 
     def _calc_reading_delay(self, text: str, reading_cfg: Dict) -> float:
         """텍스트 길이 기반 읽기 시간 계산"""
