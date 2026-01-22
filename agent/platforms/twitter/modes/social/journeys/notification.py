@@ -139,10 +139,13 @@ class NotificationJourney(BaseJourney):
         logger.info(f"[Notification] Type breakdown: {type_counts}, skipped: {skipped_count}")
 
         # 처리 대상 알림 상세 로그
-        for i, p in enumerate(processed[:15]):
-            from_user = p.raw.get('from_user', 'unknown')
-            text = (p.raw.get('text', '') or '')[:40]
-            logger.info(f"[Notification] #{i+1} {p.scenario_type}: @{from_user} - {text}...")
+        if not processed:
+            logger.info(f"[Notification] Actionable: 0 (all {len(notifications)} filtered or skipped)")
+        else:
+            for i, p in enumerate(processed[:15]):
+                from_user = p.raw.get('from_user', 'unknown')
+                text = (p.raw.get('text', '') or '')[:40]
+                logger.info(f"[Notification] #{i+1} {p.scenario_type}: @{from_user} - {text}...")
 
         processed.sort(key=lambda x: x.priority)
         return processed

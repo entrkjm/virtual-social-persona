@@ -150,8 +150,7 @@ class FeedJourney(BaseJourney):
             # 3. 나머지
             others.append(post)
 
-        if skipped_interacted > 0:
-            logger.info(f"[Feed] Skipped {skipped_interacted} already interacted posts")
+        logger.info(f"[Feed] Interacted filter: {skipped_interacted}/{len(posts)} skipped")
 
         return ClassifiedPosts(familiar=familiar, interesting=interesting, others=others)
 

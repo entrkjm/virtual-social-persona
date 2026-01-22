@@ -83,6 +83,10 @@ class ReplyGenerator:
                     if similarity >= SIMILARITY_THRESHOLD:
                         logger.warning(f"[ReplyGen] Too similar ({similarity:.0%}) to: '{similar_to[:30]}...' - regenerating")
                         continue
+                    else:
+                        logger.info(f"[ReplyGen] Similarity check passed ({similarity:.0%})")
+                else:
+                    logger.info("[ReplyGen] Similarity check skipped (no recent_replies)")
 
                 logger.info(f"[ReplyGen] Generated ({len(cleaned)} chars): {cleaned[:50]}...")
                 return cleaned
