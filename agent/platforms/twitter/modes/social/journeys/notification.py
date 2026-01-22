@@ -19,6 +19,7 @@ from ..scenarios.notification.received_comment import ReceivedCommentScenario
 from ..scenarios.notification.mentioned import MentionedScenario
 from ..scenarios.notification.quoted import QuotedScenario
 from ..scenarios.notification.new_follower import NewFollowerScenario
+from ..scenarios.notification.reposted import RepostedScenario
 
 
 @dataclass
@@ -60,7 +61,8 @@ class NotificationJourney(BaseJourney):
             'reply': ReceivedCommentScenario(self.memory_db, self.platform, self.persona_config),
             'mention': MentionedScenario(self.memory_db, self.platform, self.persona_config),
             'quote': QuotedScenario(self.memory_db, self.platform, self.persona_config),
-            'follow': NewFollowerScenario(self.memory_db, self.platform, self.persona_config)
+            'follow': NewFollowerScenario(self.memory_db, self.platform, self.persona_config),
+            'retweet': RepostedScenario(self.memory_db, self.platform, self.persona_config)
         }
 
     def run(self, count: int = 20, process_limit: int = 1) -> Optional[JourneyResult]:
@@ -83,7 +85,7 @@ class NotificationJourney(BaseJourney):
             logger.info("[Notification] No actionable notifications (all filtered)")
             return None
 
-        logger.info(f"[Notification] {len(classified)} actionable: {[n.scenario_type for n in classified[:5]]}")
+        logger.info(f"[Notification] {len(classified)} actionable: {[n.scenario_type for n in classified[:10]]}")
 
         for notif in classified[:process_limit]:
             logger.info(f"[Notification] Processing: {notif.scenario_type} from @{notif.raw.get('from_user')}")
