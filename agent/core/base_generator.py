@@ -10,7 +10,6 @@ from dataclasses import dataclass
 from enum import Enum
 
 from core.llm import llm_client
-from agent.persona.pattern_tracker import PatternTracker, create_pattern_tracker
 from agent.core.text_utils import extract_keywords, calculate_similarity
 
 
@@ -37,9 +36,7 @@ class BaseContentGenerator(ABC):
         self.persona = persona_config
         self.platform_config = platform_config or {}
         self._load_style_configs()
-        self._load_review_config()
         self._load_quip_pool()
-        self.pattern_tracker = create_pattern_tracker(persona_config)
     
     def _load_quip_pool(self):
         """QUIP 응답용 패턴 풀 로드 (페르소나 설정 우선)"""
@@ -66,7 +63,6 @@ class BaseContentGenerator(ABC):
         
         speech = getattr(self.persona, 'speech_style', {}) or {}
         self.opener_pool = speech.get('opener_pool', [])
-        self.signature_phrases = speech.get('signature_phrases', [])
 
     def _load_style_configs(self):
         """스타일 설정 로드 - 서브클래스에서 오버라이드 가능"""
@@ -97,15 +93,6 @@ class BaseContentGenerator(ABC):
         self.energy_levels = speech.get('energy_levels', {})
         self.opener_pool = speech.get('opener_pool', [])
         self.closer_pool = speech.get('closer_pool', [])
-
-    def _load_review_config(self):
-        speech = self.persona.speech_style or {}
-        review_config = speech.get('content_review', {})
-        
-        self.review_enabled = review_config.get('enabled', False)
-        self.review_fix_patterns = review_config.get('fix_excessive_patterns', True)
-        self.review_patterns = review_config.get('patterns_to_moderate', [])
-        self.review_max_occurrences = review_config.get('max_pattern_occurrences', 1)
 
     def _analyze_recent_posts(self, recent_posts: List[str]) -> Dict:
         """최근 포스트 분석 - 주제/표현 추출 (LLM)"""
