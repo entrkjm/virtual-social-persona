@@ -160,6 +160,13 @@ class ReplyGenerator:
                 parts.append("\n이 글은 내 글에 대한 답글입니다.")
             if context.get('topic'):
                 parts.append(f"주제: {context.get('topic')}")
+            if context.get('author_profile'):
+                profile = context['author_profile']
+                parts.append(f"\n[글쓴이 정보]")
+                if profile.get('bio'):
+                    parts.append(f"소개: {profile.get('bio', '')[:60]}")
+                if profile.get('followers_count'):
+                    parts.append(f"팔로워: {profile.get('followers_count', 0):,}명")
             if context.get('existing_replies'):
                 existing = context['existing_replies']
                 parts.append(f"\n[이 글에 달린 기존 답글 {len(existing)}개]")

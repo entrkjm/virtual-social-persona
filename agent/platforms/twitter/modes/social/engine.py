@@ -13,7 +13,7 @@ from typing import Optional, Dict, Any, List, Callable
 from agent.core.logger import logger
 from agent.memory.database import MemoryDatabase
 from agent.memory.factory import MemoryFactory
-from agent.platforms.twitter.api.social import get_tweet_replies
+from agent.platforms.twitter.api.social import get_tweet_replies, get_user_profile
 
 from .journeys.notification import NotificationJourney
 from .journeys.feed import FeedJourney
@@ -270,6 +270,22 @@ class SocialEngine:
 
                 reactions = 0
 
+                # Phase 2-1: 모든 포스트 컨텍스트 수집 (author + replies)
+                if not is_warmup:
+                    posts_to_browse = await self._enrich_posts_context(
+                        posts_to_browse, do_delay, reading_cfg, max_reactions
+                    )
+
+                    # Phase 2-2: 전체 컨텍스트 보고 반응할 포스트 선정
+                    selected_posts = self._select_posts_for_reaction(
+                        posts_to_browse, max_reactions
+                    )
+                    selected_ids = {p.get('id') for p in selected_posts}
+                    logger.info(f"[Feed] Selected {len(selected_posts)} posts for reaction")
+                else:
+                    selected_ids = set()
+
+                # Phase 2-3: 포스트 처리
                 for post in posts_to_browse:
                     result.feeds_browsed += 1
                     user = post.get('user', 'unknown')
@@ -277,37 +293,21 @@ class SocialEngine:
                     text_preview = (text[:40] + '...') if text else ''
                     post_id = post.get('id')
 
-                    # 읽기 딜레이 (human-like)
-                    if reading_cfg and text:
-                        read_delay = self._calc_reading_delay(text, reading_cfg)
-                        logger.info(f"[Feed] Reading @{user}'s post ({read_delay:.1f}s)")
-                        await do_delay(read_delay)
-
-                    # 댓글 가져오기 + 읽기 딜레이
-                    replies = []
-                    if post_id and not is_warmup and reactions < max_reactions:
-                        try:
-                            replies = get_tweet_replies(str(post_id))
-                            if replies:
-                                logger.info(f"[Feed] Reading {len(replies)} replies...")
-                                # 댓글 읽기 딜레이 (댓글당 1-2초)
-                                replies_delay = len(replies) * random.uniform(1.0, 2.0)
-                                replies_delay = min(replies_delay, 8.0)  # 최대 8초
-                                await do_delay(replies_delay)
-                                post['replies'] = replies  # 컨텍스트로 전달
-                        except Exception as e:
-                            logger.debug(f"[Feed] Failed to get replies: {e}")
-
                     if is_warmup:
                         logger.info(f"[Feed] @{user}: {text_preview} (warmup)")
-                        # 스크롤 딜레이
                         scroll_delay = transitions_cfg.get('scroll_to_next', [1.0, 3.0])
                         await do_delay(random.uniform(scroll_delay[0], scroll_delay[1]))
                         continue
 
                     if reactions >= max_reactions:
                         logger.info(f"[Feed] @{user}: {text_preview} (max reached)")
-                        # 스크롤 딜레이
+                        scroll_delay = transitions_cfg.get('scroll_to_next', [1.0, 3.0])
+                        await do_delay(random.uniform(scroll_delay[0], scroll_delay[1]))
+                        continue
+
+                    # 선정되지 않은 포스트는 스킵
+                    if post_id not in selected_ids:
+                        logger.info(f"[Feed] @{user}: {text_preview} (not selected)")
                         scroll_delay = transitions_cfg.get('scroll_to_next', [1.0, 3.0])
                         await do_delay(random.uniform(scroll_delay[0], scroll_delay[1]))
                         continue
@@ -441,6 +441,129 @@ class SocialEngine:
         base = len(text) / chars_per_sec
         varied = base * (1 + random.uniform(-variance, variance))
         return max(min_delay, min(max_delay, varied))
+
+    async def _enrich_posts_context(
+        self,
+        posts: List[Dict[str, Any]],
+        do_delay,
+        reading_cfg: Dict,
+        max_count: int
+    ) -> List[Dict[str, Any]]:
+        """
+        포스트별 컨텍스트 수집 (author_profile + replies)
+        human-like 딜레이 포함
+        """
+        enriched = []
+        for i, post in enumerate(posts[:max_count * 2]):  # 선정 후보 2배까지만 수집
+            user = post.get('user', 'unknown')
+            text = post.get('text', '')
+            post_id = post.get('id')
+
+            # 읽기 딜레이
+            if reading_cfg and text:
+                read_delay = self._calc_reading_delay(text, reading_cfg)
+                logger.info(f"[Feed] Reading @{user}'s post ({read_delay:.1f}s)")
+                await do_delay(read_delay)
+
+            # 글쓴이 프로필 가져오기
+            try:
+                user_id = post.get('user_id')
+                screen_name = post.get('user')
+                if user_id or screen_name:
+                    author_profile = get_user_profile(user_id=user_id, screen_name=screen_name)
+                    if author_profile:
+                        post['author_profile'] = author_profile
+                        bio_preview = (author_profile.get('bio', '') or '')[:30]
+                        logger.info(f"[Feed] Author: @{screen_name} - {bio_preview}...")
+                        await do_delay(random.uniform(1.0, 2.0))
+            except Exception as e:
+                logger.debug(f"[Feed] Failed to get author profile: {e}")
+
+            # 댓글 가져오기
+            if post_id:
+                try:
+                    replies = get_tweet_replies(str(post_id))
+                    if replies:
+                        logger.info(f"[Feed] Reading {len(replies)} replies...")
+                        replies_delay = min(len(replies) * random.uniform(1.0, 2.0), 8.0)
+                        await do_delay(replies_delay)
+                        post['replies'] = replies
+                except Exception as e:
+                    logger.debug(f"[Feed] Failed to get replies: {e}")
+
+            enriched.append(post)
+
+        return enriched
+
+    def _select_posts_for_reaction(
+        self,
+        posts: List[Dict[str, Any]],
+        max_reactions: int
+    ) -> List[Dict[str, Any]]:
+        """
+        컨텍스트 기반 반응할 포스트 선정
+        점수 = author_score + content_score + engagement_score
+        """
+        scored_posts = []
+
+        for post in posts:
+            score = 0.0
+            user_id = post.get('user_id') or post.get('user', '')
+            text = post.get('text', '').lower()
+            author_profile = post.get('author_profile', {})
+            replies = post.get('replies', [])
+
+            # 1. Author Score (0-40점)
+            # 아는 사람이면 가산
+            person = self.memory_db.get_person(user_id, self.platform)
+            if person and person.tier == 'friend':
+                score += 40
+            elif person and person.tier == 'familiar':
+                score += 30
+
+            # 프로필 완성도 (bio 있으면)
+            if author_profile.get('bio'):
+                score += 5
+            # 팔로워 수 (신뢰도)
+            followers = author_profile.get('followers_count', 0)
+            if followers > 1000:
+                score += 5
+            elif followers > 100:
+                score += 2
+
+            # 2. Content Score (0-30점)
+            # 관심 키워드 매칭
+            matching_interests = sum(1 for kw in self.core_interests if kw.lower() in text)
+            score += min(matching_interests * 10, 30)
+
+            # 3. Engagement Score (0-20점)
+            engagement = post.get('engagement', {})
+            likes = engagement.get('favorite_count', 0)
+            retweets = engagement.get('retweet_count', 0)
+            engagement_score = min((likes + retweets * 2) / 10, 20)
+            score += engagement_score
+
+            # 4. Reply Context Score (0-10점)
+            # 댓글이 적으면 참여 기회 높음
+            if replies:
+                if len(replies) < 3:
+                    score += 10
+                elif len(replies) < 10:
+                    score += 5
+            else:
+                score += 8  # 댓글 없으면 첫 댓글 기회
+
+            scored_posts.append((post, score))
+
+        # 점수순 정렬
+        scored_posts.sort(key=lambda x: x[1], reverse=True)
+
+        selected = [p for p, s in scored_posts[:max_reactions]]
+        if selected:
+            top_scores = [f"@{p.get('user')}({s:.0f})" for p, s in scored_posts[:max_reactions]]
+            logger.info(f"[Feed] Selection scores: {', '.join(top_scores)}")
+
+        return selected
 
     def get_session_interval(self) -> tuple[int, int]:
         """세션 간 휴식 시간 반환 (초)"""

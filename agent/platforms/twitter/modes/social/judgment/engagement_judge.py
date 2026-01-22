@@ -123,6 +123,14 @@ class EngagementJudge:
                 parts.append("- 내 글에 대한 답글임")
             if extra_context.get('is_question'):
                 parts.append("- 질문 형태임")
+            if extra_context.get('author_profile'):
+                profile = extra_context['author_profile']
+                parts.append(f"\n글쓴이 프로필:")
+                parts.append(f"  - @{profile.get('screen_name', 'unknown')}")
+                if profile.get('bio'):
+                    parts.append(f"  - 소개: {profile.get('bio', '')[:80]}")
+                if profile.get('followers_count'):
+                    parts.append(f"  - 팔로워: {profile.get('followers_count', 0):,}명")
             if extra_context.get('replies'):
                 replies = extra_context['replies']
                 parts.append(f"\n기존 답글 ({len(replies)}개):")
