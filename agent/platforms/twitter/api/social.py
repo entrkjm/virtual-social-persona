@@ -434,7 +434,7 @@ def _classify_notification_type(notif) -> str:
     if any(kw in msg for kw in ["liked", "좋아요", "마음"]):
         return "like"
     # Retweet: 영어 + 한글
-    elif any(kw in msg for kw in ["retweeted", "retweet", "리트윗", "리포스트"]):
+    elif any(kw in msg for kw in ["retweeted", "retweet", "reposted", "리트윗", "리포스트"]):
         return "retweet"
     # Quote: 영어 + 한글
     elif any(kw in msg for kw in ["quoted", "quote", "인용"]):
