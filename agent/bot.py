@@ -35,7 +35,6 @@ from agent.platforms.twitter.modes.casual.trigger_engine import PostingTriggerEn
 from agent.core.topic_selector import TopicSelector
 from agent.knowledge.knowledge_base import knowledge_base
 from agent.platforms.twitter.modes.series.engine import SeriesEngine
-from agent.persona.pattern_tracker import PatternTracker
 from agent.core.logger import logger
 
 class SocialAgent:
@@ -96,10 +95,6 @@ class SocialAgent:
         self.posting_trigger = PostingTriggerEngine(
             db=self.memory_db,
             inspiration_pool=self.inspiration_pool
-        )
-        self.pattern_tracker = PatternTracker(
-            db=self.memory_db,
-            pattern_registry=self.persona.raw_data.get('pattern_registry')
         )
         self.topic_selector = TopicSelector()
         

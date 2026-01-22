@@ -47,9 +47,7 @@ class TestMemoryDI(unittest.TestCase):
         
         self.assertIs(agent.posting_trigger.db, agent.memory_db)
         self.assertIs(agent.posting_trigger.inspiration_pool, agent.inspiration_pool)
-        
-        self.assertIs(agent.pattern_tracker.db, agent.memory_db)
-        
+
         print("[TestMemoryDI] All sub-components share the correct memory instances.")
         
     def test_db_access(self):
