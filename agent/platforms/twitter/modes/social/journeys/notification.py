@@ -128,7 +128,7 @@ class NotificationJourney(BaseJourney):
                     priority=priority
                 ))
 
-        logger.debug(f"[Notification] Type breakdown: {type_counts}, skipped: {skipped_count}")
+        logger.info(f"[Notification] Type breakdown: {type_counts}, skipped: {skipped_count}")
         processed.sort(key=lambda x: x.priority)
         return processed
 

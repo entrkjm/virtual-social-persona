@@ -425,7 +425,7 @@ def _classify_notification_type(notif) -> str:
     msg = (notif.message or "").lower()
 
     # 순서 중요: "liked your reply"에서 like가 먼저 매칭되어야 함
-    
+
     # Like: 영어 + 한글 (먼저 체크 - "liked your reply" 대응)
     if any(kw in msg for kw in ["liked", "좋아요", "마음"]):
         return "like"
@@ -445,6 +445,7 @@ def _classify_notification_type(notif) -> str:
     elif any(kw in msg for kw in ["followed", "follow", "팔로우", "팔로잉"]):
         return "follow"
     else:
+        logger.debug(f"[NOTIF] Unknown type, message: {msg[:100]}")
         return "unknown"
 
 
