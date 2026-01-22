@@ -1088,7 +1088,7 @@ class SocialAgent:
     def run_series_step(self) -> Tuple[FunctionResultStatus, str, Dict[str, Any]]:
         """Series Mode step - 시리즈 콘텐츠 생성"""
         try:
-            result = self.series_engine.step()
+            result = self.series_engine.execute(self.adapter.platform)
             if result:
                 return FunctionResultStatus.DONE, f"[Series] {result}", {}
             return FunctionResultStatus.DONE, "[Series] No action", {}
