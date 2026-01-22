@@ -311,9 +311,22 @@ def post_tweet(content: str, reply_to: str = None, media_files: List[str] = None
         raise
 
 
-def reply_to_tweet(tweet_id: str, content: str, media_files: List[str] = None) -> str:
-    """답글 별칭 / Alias for post_tweet(reply_to=...)"""
-    return post_tweet(content, reply_to=tweet_id, media_files=media_files)
+def reply_to_tweet(tweet_id: str, content: str, media_files: List[str] = None) -> Optional[str]:
+    """
+    답글 / Reply to tweet
+
+    Returns:
+        tweet_id if success, None if tweet deleted/invisible (385 error)
+    """
+    try:
+        return post_tweet(content, reply_to=tweet_id, media_files=media_files)
+    except Exception as e:
+        err_str = str(e)
+        # 385: Tweet deleted or not visible
+        if '385' in err_str:
+            logger.warning(f"[REPLY] Tweet {tweet_id} deleted or not visible (385)")
+            return None
+        raise
 
 
 def search_tweets(query: str, count: int = 5):

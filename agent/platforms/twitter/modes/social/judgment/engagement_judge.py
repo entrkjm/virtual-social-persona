@@ -74,6 +74,12 @@ class EngagementJudge:
 - 외국어나 전문용어가 많아서 맥락 파악이 안 되면 skip
 - 추측으로 반응하지 말 것
 
+"눈치" 판단 (다음 경우 모든 액션 skip):
+- 특정 사람들끼리의 대화에 끼어드는 것 같을 때
+- 농담인지 진담인지 모호할 때
+- 반응했다가 어색해질 것 같을 때
+- 맥락을 모르면 잘못된 반응을 할 수 있을 때
+
 반드시 아래 JSON 형식으로만 응답하세요:
 {"like": true/false, "repost": true/false, "reply": true/false, "reply_type": "short|normal|long 또는 null", "reason": "짧은 이유"}"""
 
