@@ -513,8 +513,12 @@ def get_tweet_replies(tweet_id: str):
     """특정 트윗의 답글 가져오기 / Get replies to a tweet"""
     try:
         return _run_async(_get_tweet_replies_twikit(tweet_id))
+    except KeyError as e:
+        # twikit API 응답 구조 불일치 (일부 트윗에서 발생)
+        logger.debug(f"[REPLIES] skipped (API structure): {e}")
+        return []
     except Exception as e:
-        logger.error(f"[REPLIES] failed: {e}")
+        logger.warning(f"[REPLIES] failed: {e}")
         return []
 
 
