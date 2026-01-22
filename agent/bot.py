@@ -1045,6 +1045,11 @@ class SocialAgent:
         """Feed Journey용 posts 검색 - 여러 키워드로 시도"""
         import random
 
+        # human_like 설정에서 검색 간 딜레이 로드
+        activity_cfg = self.persona.platform_configs.get('twitter', {}).get('activity', {})
+        human_like_cfg = activity_cfg.get('human_like', {})
+        search_interval = human_like_cfg.get('transitions', {}).get('search_interval', [3, 8])
+
         hour = datetime.now().hour
         core_keywords = self.persona.core_keywords
         time_kw_config = self.persona.behavior.get('time_keywords', {})
@@ -1085,6 +1090,12 @@ class SocialAgent:
 
             logger.info(f"[Social] Feed query={search_query} (source={source}, attempt={attempt+1})")
             posts = self.adapter.search(search_query, count=8)
+
+            # 검색 간 딜레이 (봇 탐지 회피)
+            if attempt > 0:
+                delay = random.uniform(search_interval[0], search_interval[1])
+                logger.info(f"[Social] Search interval delay: {delay:.1f}s")
+                time.sleep(delay)
 
             if posts:
                 for post in posts:

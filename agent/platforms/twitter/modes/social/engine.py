@@ -185,6 +185,11 @@ class SocialEngine:
         # 세션 내 딜레이 범위
         intra_delay = self.session_config.get('intra_delay', [2, 8])
 
+        # Human-like 설정 로드
+        reading_cfg = self.human_like_config.get('reading', {})
+        thinking_cfg = self.human_like_config.get('thinking', {})
+        transitions_cfg = self.human_like_config.get('transitions', {})
+
         # === Phase 1: 알림 처리 ===
         notif_cfg = self.session_config.get('notification', {})
         notif_count_range = notif_cfg.get('count', [3, 8])
@@ -248,15 +253,32 @@ class SocialEngine:
                 for post in posts_to_browse:
                     result.feeds_browsed += 1
                     user = post.get('user', 'unknown')
-                    text_preview = (post.get('text', '')[:40] + '...') if post.get('text') else ''
+                    text = post.get('text', '')
+                    text_preview = (text[:40] + '...') if text else ''
+
+                    # 읽기 딜레이 (human-like)
+                    if reading_cfg and text:
+                        read_delay = self._calc_reading_delay(text, reading_cfg)
+                        logger.info(f"[Feed] Reading @{user}'s post ({read_delay:.1f}s)")
+                        await do_delay(read_delay)
 
                     if is_warmup:
                         logger.info(f"[Feed] @{user}: {text_preview} (warmup)")
+                        # 스크롤 딜레이
+                        scroll_delay = transitions_cfg.get('scroll_to_next', [1.0, 3.0])
+                        await do_delay(random.uniform(scroll_delay[0], scroll_delay[1]))
                         continue
 
                     if reactions >= max_reactions:
                         logger.info(f"[Feed] @{user}: {text_preview} (max reached)")
+                        # 스크롤 딜레이
+                        scroll_delay = transitions_cfg.get('scroll_to_next', [1.0, 3.0])
+                        await do_delay(random.uniform(scroll_delay[0], scroll_delay[1]))
                         continue
+
+                    # 생각 딜레이 (반응 전)
+                    think_delay = thinking_cfg.get('before_reply', [2.0, 5.0])
+                    await do_delay(random.uniform(think_delay[0], think_delay[1]))
 
                     feed_result = self.run_feed_journey([post], process_limit=1)
                     if feed_result and feed_result.success and feed_result.action_taken:
@@ -267,9 +289,9 @@ class SocialEngine:
                     else:
                         logger.info(f"[Feed] @{user}: {text_preview} (skip)")
 
-                    # 스크롤 딜레이
-                    delay = random.uniform(intra_delay[0] * 0.5, intra_delay[1] * 0.5)
-                    await do_delay(delay)
+                    # 스크롤 딜레이 (다음 포스트로 이동)
+                    scroll_delay = transitions_cfg.get('scroll_to_next', [1.0, 3.0])
+                    await do_delay(random.uniform(scroll_delay[0], scroll_delay[1]))
 
             except Exception as e:
                 error_str = str(e).lower()
@@ -287,6 +309,17 @@ class SocialEngine:
         )
 
         return result
+
+    def _calc_reading_delay(self, text: str, reading_cfg: Dict) -> float:
+        """텍스트 길이 기반 읽기 시간 계산"""
+        chars_per_sec = reading_cfg.get('chars_per_second', 5)
+        min_delay = reading_cfg.get('min', 1.0)
+        max_delay = reading_cfg.get('max', 8.0)
+        variance = reading_cfg.get('variance', 0.3)
+
+        base = len(text) / chars_per_sec
+        varied = base * (1 + random.uniform(-variance, variance))
+        return max(min_delay, min(max_delay, varied))
 
     def get_session_interval(self) -> tuple[int, int]:
         """세션 간 휴식 시간 반환 (초)"""

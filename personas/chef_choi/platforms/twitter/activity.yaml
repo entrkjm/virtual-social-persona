@@ -62,6 +62,7 @@ human_like:
     scroll_to_next: [1.0, 3.0]
     switch_tab: [2.0, 5.0]
     mode_change: [5.0, 15.0]
+    search_interval: [3, 8]       # 검색 API 호출 간 딜레이
 
   burst_prevention:
     max_consecutive: 3
