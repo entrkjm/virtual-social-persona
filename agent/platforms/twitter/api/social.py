@@ -494,19 +494,108 @@ def get_all_notifications(count: int = 40) -> List[NotificationData]:
 async def _get_tweet_replies_twikit(tweet_id: str):
     async def _do():
         client = await _get_twikit_client()
-        tweet = await client.get_tweet_by_id(tweet_id)
-        if not tweet or not tweet.replies:
+        # twikit get_tweet_by_id 내부에서 KeyError 발생 가능
+        # 직접 API 호출해서 더 안전하게 처리
+        try:
+            response, _ = await client.gql.tweet_detail(tweet_id, None)
+        except Exception as e:
+            logger.debug(f"[REPLIES] tweet_detail API failed: {e}")
             return []
+
+        if 'errors' in response:
+            return []
+
+        # entries 추출
+        from twikit.utils import find_dict
+        entries_result = find_dict(response, 'entries', find_one=True)
+        if not entries_result:
+            return []
+        entries = entries_result[0]
+
         results = []
-        for reply in tweet.replies:
-            results.append({
-                "id": reply.id,
-                "user": reply.user.screen_name if reply.user else "unknown",
-                "text": reply.text,
-                "created_at": reply.created_at if hasattr(reply, 'created_at') else None
-            })
+        found_main_tweet = False
+
+        for entry in entries:
+            entry_id = entry.get('entryId', '')
+
+            # cursor는 스킵
+            if entry_id.startswith('cursor'):
+                continue
+
+            # 메인 트윗 찾기
+            if entry_id == f'tweet-{tweet_id}':
+                found_main_tweet = True
+                continue
+
+            # 메인 트윗 이후의 entries가 replies
+            if found_main_tweet:
+                # conversationthread 형식 (nested replies)
+                if 'items' in entry.get('content', {}):
+                    for item in entry['content']['items']:
+                        tweet_data = _extract_reply_from_item(item)
+                        if tweet_data:
+                            results.append(tweet_data)
+                # 단일 tweet 형식
+                else:
+                    tweet_data = _extract_reply_from_entry(entry)
+                    if tweet_data:
+                        results.append(tweet_data)
+
         return results
     return await _with_retry(_do)
+
+
+def _extract_reply_from_item(item: dict) -> Optional[dict]:
+    """conversationthread item에서 reply 추출"""
+    try:
+        entry_id = item.get('entryId', '')
+        if 'tweet' not in entry_id:
+            return None
+
+        # item > item > itemContent > tweet_results > result
+        content = item.get('item', {}).get('itemContent', {})
+        tweet_result = content.get('tweet_results', {}).get('result', {})
+
+        if not tweet_result:
+            return None
+
+        # legacy 데이터에서 추출
+        legacy = tweet_result.get('legacy', {})
+        user_results = tweet_result.get('core', {}).get('user_results', {}).get('result', {})
+        user_legacy = user_results.get('legacy', {})
+
+        return {
+            "id": legacy.get('id_str') or tweet_result.get('rest_id'),
+            "user": user_legacy.get('screen_name', 'unknown'),
+            "text": legacy.get('full_text', ''),
+            "created_at": legacy.get('created_at')
+        }
+    except Exception:
+        return None
+
+
+def _extract_reply_from_entry(entry: dict) -> Optional[dict]:
+    """단일 entry에서 reply 추출"""
+    try:
+        content = entry.get('content', {})
+        item_content = content.get('itemContent', {})
+        tweet_result = item_content.get('tweet_results', {}).get('result', {})
+
+        if not tweet_result:
+            return None
+
+        legacy = tweet_result.get('legacy', {})
+        user_results = tweet_result.get('core', {}).get('user_results', {}).get('result', {})
+        user_legacy = user_results.get('legacy', {})
+
+        return {
+            "id": legacy.get('id_str') or tweet_result.get('rest_id'),
+            "user": user_legacy.get('screen_name', 'unknown'),
+            "text": legacy.get('full_text', ''),
+            "created_at": legacy.get('created_at')
+        }
+    except Exception:
+        return None
 
 
 def get_tweet_replies(tweet_id: str):
