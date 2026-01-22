@@ -129,6 +129,22 @@ async def _get_twikit_client() -> Client:
         
         _client_instance = client
         _current_cookie_path = cookies_file
+        
+        # 로그인 계정 확인
+        try:
+            me = await client.user()
+            logger.info(f"[TWITTER] 👤 로그인: @{me.screen_name} ({me.name})")
+        except Exception as e:
+            err_str = str(e)
+            # Cloudflare 차단 등 긴 HTML 응답은 간략화
+            if 'cloudflare' in err_str.lower() or '<!DOCTYPE' in err_str:
+                logger.warning("[TWITTER] ⚠️ 계정 확인 실패: Cloudflare 차단 (IP 또는 쿠키 문제)")
+            elif '403' in err_str:
+                logger.warning("[TWITTER] ⚠️ 계정 확인 실패: 403 Forbidden")
+            elif '401' in err_str:
+                logger.warning("[TWITTER] ⚠️ 계정 확인 실패: 401 Unauthorized (쿠키 만료)")
+            else:
+                logger.warning(f"[TWITTER] ⚠️ 계정 확인 실패: {err_str[:100]}")
 
     return _client_instance
 
@@ -405,17 +421,25 @@ def _classify_notification_type(notif) -> str:
     """알림 타입 분류 (twikit notification object 기반)"""
     msg = (notif.message or "").lower()
 
-    if "replied" in msg or "reply" in msg:
-        return "reply"
-    elif "quoted" in msg or "quote" in msg:
-        return "quote"
-    elif "mentioned" in msg or "mention" in msg:
-        return "mention"
-    elif "liked" in msg or "like" in msg:
+    # 순서 중요: "liked your reply"에서 like가 먼저 매칭되어야 함
+    
+    # Like: 영어 + 한글 (먼저 체크 - "liked your reply" 대응)
+    if any(kw in msg for kw in ["liked", "좋아요", "마음"]):
         return "like"
-    elif "retweeted" in msg or "retweet" in msg:
+    # Retweet: 영어 + 한글
+    elif any(kw in msg for kw in ["retweeted", "retweet", "리트윗", "리포스트"]):
         return "retweet"
-    elif "followed" in msg or "follow" in msg:
+    # Quote: 영어 + 한글
+    elif any(kw in msg for kw in ["quoted", "quote", "인용"]):
+        return "quote"
+    # Reply: 영어 + 한글 (replied to your, 답글)
+    elif any(kw in msg for kw in ["replied", "답글", "답변"]):
+        return "reply"
+    # Mention: 영어 + 한글
+    elif any(kw in msg for kw in ["mentioned", "mention", "멘션", "언급"]):
+        return "mention"
+    # Follow: 영어 + 한글
+    elif any(kw in msg for kw in ["followed", "follow", "팔로우", "팔로잉"]):
         return "follow"
     else:
         return "unknown"

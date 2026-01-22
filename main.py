@@ -185,6 +185,10 @@ def run_standalone():
         logger.info("Loading Agent State...")
         social_agent.get_state_fn(function_result=None, current_state={})
 
+        # Twitter 클라이언트 초기화 (로그인 계정 확인)
+        from agent.platforms.twitter.api import social as twitter_api
+        twitter_api.ensure_client()
+
         logger.info("Starting standalone loop")
 
         step_count = 0

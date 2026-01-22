@@ -221,4 +221,6 @@ def get_active_persona_name() -> str:
 
 # Global instance
 active_persona_name = get_active_persona_name()
+# 환경변수 설정 (다른 모듈에서 쿠키 경로 등에 사용)
+os.environ['PERSONA_NAME'] = active_persona_name
 active_persona = PersonaLoader.load_active_persona()
