@@ -32,14 +32,13 @@ python scripts/manage_cookies.py import client_a_cookies.json --env-file persona
 
 ### 환경변수로 페르소나 선택
 ```bash
-# 방법 1: 환경변수 직접 지정
+# 환경변수로 페르소나 지정
 PERSONA_NAME=chef_choi python main.py
 
-# 방법 2: 다른 계정 (쿠키도 다르게)
-PERSONA_NAME=client_a \
-TWITTER_AUTH_TOKEN="클라이언트A_auth_token" \
-TWITTER_CT0="클라이언트A_ct0" \
-python main.py
+# 다른 계정 실행 시
+# 1. data/cookies/client_a_cookies.json 생성
+# 2. 실행
+PERSONA_NAME=client_a python main.py
 ```
 
 ### Screen으로 백그라운드 실행 (추천)
@@ -49,9 +48,9 @@ screen -S chef
 PERSONA_NAME=chef_choi python main.py
 # Ctrl+A, D → detach
 
-# 터미널 2 - Client A
+# 터미널 2 - Client A (쿠키 파일 미리 준비)
 screen -S client_a
-PERSONA_NAME=client_a TWITTER_AUTH_TOKEN="..." python main.py
+PERSONA_NAME=client_a python main.py
 # Ctrl+A, D → detach
 
 # 세션 확인

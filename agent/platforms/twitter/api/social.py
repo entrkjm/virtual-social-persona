@@ -66,9 +66,22 @@ class NotificationData(TypedDict, total=False):
 def _get_cookies_path() -> str:
     """
     현재 활성화된 페르소나에 맞는 쿠키 파일 경로 반환
+    우선순위: PERSONA_NAME 환경변수 → active_persona.yaml → fallback
     """
     persona_name = os.getenv("PERSONA_NAME")
-    
+
+    if not persona_name:
+        # active_persona.yaml에서 직접 읽기 (persona_loader import 순환 방지)
+        try:
+            import yaml
+            active_config_path = os.path.join(os.path.dirname(settings.DATA_DIR), "config", "active_persona.yaml")
+            if os.path.exists(active_config_path):
+                with open(active_config_path, 'r', encoding='utf-8') as f:
+                    config = yaml.safe_load(f)
+                    persona_name = config.get('active')
+        except Exception:
+            pass
+
     if persona_name:
         cookie_dir = os.path.join(settings.DATA_DIR, "cookies")
         os.makedirs(cookie_dir, exist_ok=True)
@@ -122,17 +135,11 @@ async def _get_twikit_client() -> Client:
         if os.path.exists(cookies_file):
             try:
                 client.load_cookies(cookies_file)
-                logger.info("[TWITTER] ✅ 쿠키 로드 완료")
+                logger.info(f"[TWITTER] ✅ 쿠키 로드 완료: {os.path.basename(cookies_file)}")
             except Exception as e:
                 logger.warning(f"[TWITTER] ❌ 쿠키 로드 실패: {e}")
-        
-        # 환경변수 폴백 (파일 없을 때만)
-        elif os.getenv("TWITTER_AUTH_TOKEN") and os.getenv("TWITTER_CT0"):
-             client.set_cookies({
-                 "auth_token": os.getenv("TWITTER_AUTH_TOKEN"),
-                 "ct0": os.getenv("TWITTER_CT0")
-             })
-             logger.info("[TWITTER] ✅ 환경변수 쿠키 사용")
+        else:
+            logger.error(f"[TWITTER] ❌ 쿠키 파일 없음: {cookies_file}")
         
         _client_instance = client
         _current_cookie_path = cookies_file

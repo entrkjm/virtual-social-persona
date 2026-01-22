@@ -100,17 +100,23 @@ PERSONA_NAME=my_persona python main.py
 ```env
 # LLM (Gemini 권장)
 GEMINI_API_KEY=your_gemini_key
-
-# Twitter 인증 (쿠키 기반)
-TWITTER_AUTH_TOKEN=your_auth_token
-TWITTER_CT0=your_ct0_token
 ```
 
-### Twitter 쿠키 얻기
+### Twitter 쿠키 설정
+
+쿠키 파일 위치: `data/cookies/{persona_name}_cookies.json`
 
 1. 브라우저에서 twitter.com 로그인
 2. 개발자 도구 (F12) → Application → Cookies → twitter.com
-3. `auth_token`과 `ct0` 값 복사
+3. 모든 쿠키를 JSON으로 저장 (필수: `auth_token`, `ct0`)
+
+```json
+{
+  "auth_token": "your_auth_token",
+  "ct0": "your_ct0_token",
+  "twid": "..."
+}
+```
 
 
 ---
@@ -165,10 +171,9 @@ virtual/
 PERSONA_NAME=chef_choi python main.py
 
 # 터미널 2 (다른 트위터 계정)
-PERSONA_NAME=my_bot \
-TWITTER_AUTH_TOKEN="other_token" \
-TWITTER_CT0="other_ct0" \
-python main.py
+# 1. data/cookies/my_bot_cookies.json 생성
+# 2. 실행
+PERSONA_NAME=my_bot python main.py
 ```
 
 ---

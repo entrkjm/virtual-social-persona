@@ -100,17 +100,23 @@ PERSONA_NAME=my_persona python main.py
 ```env
 # LLM (Gemini recommended)
 GEMINI_API_KEY=your_gemini_key
-
-# Twitter Authentication (Cookie-based)
-TWITTER_AUTH_TOKEN=your_auth_token
-TWITTER_CT0=your_ct0_token
 ```
 
-### Getting Twitter Cookies
+### Twitter Cookie Setup
+
+Cookie file location: `data/cookies/{persona_name}_cookies.json`
 
 1. Login to twitter.com in your browser
 2. DevTools (F12) → Application → Cookies → twitter.com
-3. Copy `auth_token` and `ct0` values
+3. Export all cookies to JSON (required: `auth_token`, `ct0`)
+
+```json
+{
+  "auth_token": "your_auth_token",
+  "ct0": "your_ct0_token",
+  "twid": "..."
+}
+```
 
 
 ---
@@ -165,10 +171,9 @@ Run multiple personas on one machine:
 PERSONA_NAME=chef_choi python main.py
 
 # Terminal 2 (different Twitter account)
-PERSONA_NAME=my_bot \
-TWITTER_AUTH_TOKEN="other_token" \
-TWITTER_CT0="other_ct0" \
-python main.py
+# 1. Create data/cookies/my_bot_cookies.json
+# 2. Run
+PERSONA_NAME=my_bot python main.py
 ```
 
 ---
