@@ -441,6 +441,10 @@ def _classify_notification_type(notif) -> str:
     """알림 타입 분류 (twikit notification object 기반)"""
     msg = (notif.message or "").lower()
 
+    # 무시할 시스템 알림 (먼저 체크)
+    if any(kw in msg for kw in ["login", "로그인", "logged in", "접속"]):
+        return "system"
+
     # 순서 중요: "liked your reply"에서 like가 먼저 매칭되어야 함
 
     # Like: 영어 + 한글 (먼저 체크 - "liked your reply" 대응)
@@ -449,8 +453,8 @@ def _classify_notification_type(notif) -> str:
     # Retweet: 영어 + 한글
     elif any(kw in msg for kw in ["retweeted", "retweet", "reposted", "리트윗", "리포스트"]):
         return "retweet"
-    # Quote: 영어 + 한글
-    elif any(kw in msg for kw in ["quoted", "quote", "인용"]):
+    # Quote: 영어 + 한글 (다양한 형태)
+    elif any(kw in msg for kw in ["quoted", "quote tweet", "인용", "회원님의 트윗을 인용"]):
         return "quote"
     # Reply: 영어 + 한글 (replied to your, 답글)
     elif any(kw in msg for kw in ["replied", "답글", "답변"]):

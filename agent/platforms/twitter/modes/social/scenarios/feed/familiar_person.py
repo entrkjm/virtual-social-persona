@@ -50,7 +50,8 @@ class FamiliarPersonScenario(BaseScenario):
         logger.info(f"[Scenario:FamiliarPerson] Judge: like={judgment.like}, repost={judgment.repost}, reply={judgment.reply}")
 
         result = self._execute_actions(context, judgment)
-        logger.info(f"[Scenario:FamiliarPerson] Result: success={result.success if result else False}, actions={result.details.get('actions') if result else 'none'}")
+        actions = result.details.get('actions') if result and result.details else 'none'
+        logger.info(f"[Scenario:FamiliarPerson] Result: success={result.success if result else False}, actions={actions}")
 
         if result and result.success:
             self._update_memory(context, result)
@@ -167,7 +168,7 @@ class FamiliarPersonScenario(BaseScenario):
 
     def _update_memory(self, context: ScenarioContext, result: ScenarioResult):
         """메모리 업데이트"""
-        actions = result.details.get('actions', [])
+        actions = (result.details or {}).get('actions', [])
         if context.person and actions:
             for action in actions:
                 if action in ('like', 'reply', 'repost'):
