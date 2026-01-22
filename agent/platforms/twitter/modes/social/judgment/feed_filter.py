@@ -6,12 +6,16 @@ LLM 기반 피드 필터링 (배치 처리)
 """
 import json
 import logging
+import re
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 
 from core.llm import llm_client
 
 logger = logging.getLogger("agent")
+
+# 한글 유니코드 범위: AC00-D7A3 (가-힣)
+_KOREAN_PATTERN = re.compile(r'[가-힣]')
 
 
 @dataclass
@@ -76,9 +80,25 @@ class FeedFilter:
         if not posts:
             return []
 
-        # 포스트 요약 생성
+        results = []
+        korean_posts = []
+
+        # 1차: 한글 필터 (LLM 호출 전 제외)
+        for post in posts:
+            post_id = str(post.get('id', ''))
+            text = post.get('text', '')
+            if not _KOREAN_PATTERN.search(text):
+                results.append(FilterResult(post_id=post_id, passed=False, reason='no_korean'))
+            else:
+                korean_posts.append(post)
+
+        if not korean_posts:
+            logger.info(f"[FeedFilter] All {len(posts)} posts filtered (no Korean)")
+            return results
+
+        # 포스트 요약 생성 (한글 포스트만)
         post_summaries = []
-        for i, post in enumerate(posts):
+        for i, post in enumerate(korean_posts):
             post_id = post.get('id', str(i))
             user = post.get('user', 'unknown')
             text = (post.get('text', '')[:100]).replace('\n', ' ')
@@ -88,11 +108,15 @@ class FeedFilter:
 
         try:
             response = llm_client.generate(prompt, system_prompt=self._build_system_prompt())
-            return self._parse_response(response, posts)
+            llm_results = self._parse_response(response, korean_posts)
+            # 한글 필터 결과 + LLM 필터 결과 병합
+            results.extend(llm_results)
+            return results
         except Exception as e:
             logger.error(f"[FeedFilter] LLM failed: {e}")
-            # 실패 시 모두 통과 처리
-            return [FilterResult(post_id=p.get('id', ''), passed=True, reason='filter_error') for p in posts]
+            # 실패 시 한글 포스트는 통과 처리
+            results.extend([FilterResult(post_id=p.get('id', ''), passed=True, reason='filter_error') for p in korean_posts])
+            return results
 
     def _parse_response(self, response: str, posts: List[Dict]) -> List[FilterResult]:
         """LLM 응답 파싱"""
