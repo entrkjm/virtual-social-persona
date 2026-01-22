@@ -1096,5 +1096,46 @@ class SocialAgent:
             logger.error(f"[Series] Step failed: {e}")
             return FunctionResultStatus.FAILED, f"[Series] Error: {e}", {}
 
+    async def run_social_session(self):
+        """
+        Social Mode 세션 실행 - 알림/피드 배치 처리
+
+        Returns:
+            SessionResult from SocialEngine
+        """
+        from agent.platforms.twitter.modes.social.engine import SessionResult
+
+        if not self.social_engine:
+            logger.error("[Social] Engine not initialized")
+            return SessionResult()
+
+        try:
+            twitter_api.ensure_client()
+
+            def get_feed_posts():
+                return self._fetch_posts_for_feed()
+
+            result = await self.social_engine.session(
+                get_feed_posts=get_feed_posts
+            )
+
+            # 액션 기록
+            if result.total_actions > 0:
+                for action in result.actions_taken:
+                    action_type = action.split(':')[1] if ':' in action else action
+                    if action_type in ['like', 'reply', 'repost', 'follow']:
+                        human_like_controller.record_action(action_type)
+
+            return result
+
+        except Exception as e:
+            error_str = str(e).lower()
+            if any(code in error_str for code in ['226', '401', '403', 'authorization']):
+                logger.warning(f"[Social] 봇 감지/인증 에러 - 쿨다운 진입")
+                human_like_controller.handle_error(226)
+                raise
+            logger.error(f"[Social] Session failed: {e}")
+            return SessionResult()
+
 
 # Global instance removed - injected in main.py

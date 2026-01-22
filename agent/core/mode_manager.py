@@ -17,16 +17,12 @@ class AgentMode(str, Enum):
 
 @dataclass
 class ModeConfig:
-    step_interval_min: int
-    step_interval_max: int
-    warmup_steps: int
+    # 세션 간격 (초)
+    session_interval_min: int
+    session_interval_max: int
+    warmup_sessions: int
     sleep_enabled: bool
     random_breaks: bool
-    # step 확률 (scout + mentions + post = 1.0)
-    # None = 페르소나 값 사용, 값 지정 = 오버라이드
-    scout_probability: Optional[float] = None
-    mentions_probability: Optional[float] = None
-    post_probability: Optional[float] = None
     # action 확률 (Optional - None이면 페르소나 값 사용)
     like_probability: Optional[float] = None
     repost_probability: Optional[float] = None
@@ -36,39 +32,30 @@ class ModeConfig:
 MODE_CONFIGS: Dict[AgentMode, ModeConfig] = {
     # normal: 페르소나 설정 그대로 사용 (프로덕션)
     AgentMode.NORMAL: ModeConfig(
-        step_interval_min=60,
-        step_interval_max=180,
-        warmup_steps=1,
+        session_interval_min=1800,   # 30분
+        session_interval_max=7200,   # 2시간
+        warmup_sessions=2,
         sleep_enabled=True,
         random_breaks=True
-        # step 확률 None → 페르소나 값 사용
-        # action 확률 None → 페르소나 값 사용
     ),
-    # test: 중간 속도, 확률 오버라이드 (테스트)
+    # test: 짧은 세션 간격 (테스트)
     AgentMode.TEST: ModeConfig(
-        step_interval_min=15,
-        step_interval_max=45,
-        warmup_steps=1,
+        session_interval_min=60,     # 1분
+        session_interval_max=180,    # 3분
+        warmup_sessions=0,
         sleep_enabled=False,
         random_breaks=False,
-        scout_probability=0.75,
-        mentions_probability=0.15,
-        post_probability=0.10,
         like_probability=0.45,
         repost_probability=0.45,
         comment_probability=0.12
     ),
-    # aggressive: 빠른 속도, 높은 확률 (개발)
-    # like = repost > comment >> post
+    # aggressive: 매우 짧은 간격 (개발)
     AgentMode.AGGRESSIVE: ModeConfig(
-        step_interval_min=8,
-        step_interval_max=20,
-        warmup_steps=0,
+        session_interval_min=15,     # 15초
+        session_interval_max=45,     # 45초
+        warmup_sessions=0,
         sleep_enabled=False,
         random_breaks=False,
-        scout_probability=0.99,
-        mentions_probability=0.01,
-        post_probability=0.01,
         like_probability=0.60,
         repost_probability=0.60,
         comment_probability=0.18
@@ -102,11 +89,11 @@ class ModeManager:
     def get_config_override(self) -> Dict[str, Any]:
         cfg = self.config
         result = {
-            "step_interval": {
-                "min": cfg.step_interval_min,
-                "max": cfg.step_interval_max
+            "session_interval": {
+                "min": cfg.session_interval_min,
+                "max": cfg.session_interval_max
             },
-            "warmup_steps": cfg.warmup_steps,
+            "warmup_sessions": cfg.warmup_sessions,
             "sleep_enabled": cfg.sleep_enabled,
             "random_breaks": cfg.random_breaks
         }
@@ -137,12 +124,12 @@ class ModeManager:
 
         return result
 
-    def get_step_interval(self) -> tuple[int, int]:
+    def get_session_interval(self) -> tuple[int, int]:
         cfg = self.config
-        return cfg.step_interval_min, cfg.step_interval_max
+        return cfg.session_interval_min, cfg.session_interval_max
 
-    def should_warmup(self, current_step: int) -> bool:
-        return current_step < self.config.warmup_steps
+    def should_warmup(self, current_session: int) -> bool:
+        return current_session < self.config.warmup_sessions
 
     def should_sleep(self) -> bool:
         return self.config.sleep_enabled
@@ -150,32 +137,20 @@ class ModeManager:
     def should_take_break(self) -> bool:
         return self.config.random_breaks
 
-    def get_step_probabilities(self, behavior_config: Dict) -> Dict[str, float]:
-        """Get step probabilities (override or persona default)
-        
+    def get_mode_weights(self, activity_config: Dict) -> Dict[str, float]:
+        """Get mode weights from activity config
+
         Args:
-            behavior_config: Persona behavior configuration
-            
+            activity_config: Activity configuration from persona
+
         Returns:
-            Dict with 'scout', 'mentions', 'post' probabilities
+            Dict with 'social', 'casual', 'series' weights
         """
-        cfg = self.config
-        
-        # If mode has overrides, use them
-        if cfg.scout_probability is not None:
-            return {
-                'scout': cfg.scout_probability,
-                'mentions': cfg.mentions_probability,
-                'post': cfg.post_probability
-            }
-        
-        # Otherwise use persona values
-        step_probs = behavior_config.get('step_probabilities', {})
+        mode_weights = activity_config.get('mode_weights', {})
         return {
-            'scout': step_probs.get('scout_probability', 0.80),
-            'mentions': step_probs.get('mentions_probability', 0.15),
-            'reply_check': step_probs.get('reply_check_probability', 0.05), # New
-            'post': step_probs.get('post_probability', 0.05) # Reduced in practice as sum > 1 is handled by weights
+            'social': mode_weights.get('social', 0.97),
+            'casual': mode_weights.get('casual', 0.02),
+            'series': mode_weights.get('series', 0.01)
         }
 
     def on_error(self, error_code: Optional[int] = None):

@@ -1,11 +1,14 @@
 """
-Social Mode Engine
-통합 진입점 - NotificationJourney와 FeedJourney 오케스트레이션
+Social Mode Engine (Session-based v3)
+세션 기반 활동 - 알림/피드 배치 처리 후 휴식
 
-기존 SocialAgent와 통합하여 사용
+사람 패턴: 폰 켜서 알림 쭉 확인 → 피드 스크롤 → 내려놓기 → 반복
 """
+import asyncio
 import random
-from typing import Optional, Dict, Any, List
+import time
+from dataclasses import dataclass, field
+from typing import Optional, Dict, Any, List, Callable
 
 from agent.core.logger import logger
 from agent.memory.database import MemoryDatabase
@@ -14,6 +17,20 @@ from agent.memory.factory import MemoryFactory
 from .journeys.notification import NotificationJourney
 from .journeys.feed import FeedJourney
 from .journeys.base import JourneyResult
+
+
+@dataclass
+class SessionResult:
+    """세션 실행 결과"""
+    notifications_processed: int = 0
+    feeds_browsed: int = 0
+    feeds_reacted: int = 0
+    actions_taken: List[str] = field(default_factory=list)
+    duration_seconds: float = 0.0
+
+    @property
+    def total_actions(self) -> int:
+        return len(self.actions_taken)
 
 
 class SocialEngine:
@@ -37,6 +54,13 @@ class SocialEngine:
         self.platform = platform
         self.activity_config = self.persona_config.get('activity', {})
 
+        # 세션 설정 로드
+        self.session_config = self.activity_config.get('session', {})
+        self.human_like_config = self.activity_config.get('human_like', {})
+
+        # 세션 카운터
+        self.session_count = 0
+
         # 메모리 DB
         self.memory_db = MemoryFactory.get_memory_db(persona_id)
 
@@ -47,7 +71,11 @@ class SocialEngine:
         self.notification_journey = NotificationJourney(
             self.memory_db, platform, persona_config
         )
-        feed_selection = self.activity_config.get('social', {}).get('feed_selection', {})
+        feed_cfg = self.session_config.get('feed', {})
+        feed_selection = {
+            'familiar_first': feed_cfg.get('familiar_first', True),
+            'random_discovery_prob': feed_cfg.get('random_discovery_prob', 0.1)
+        }
         self.feed_journey = FeedJourney(
             self.memory_db,
             platform,
@@ -125,51 +153,117 @@ class SocialEngine:
             logger.error(f"[Social] Feed journey failed: {e}")
             return None
 
-    def step(
+    async def session(
         self,
-        posts: Optional[List[Dict[str, Any]]] = None,
-        notification_weight: float = 0.6
-    ) -> Optional[JourneyResult]:
+        get_feed_posts: Optional[Callable[[], List[Dict[str, Any]]]] = None,
+        delay_fn: Optional[Callable[[float], None]] = None
+    ) -> SessionResult:
         """
-        단일 step 실행 (알림 vs 피드 가중치 기반)
+        세션 실행 - 알림 배치 처리 → 피드 배치 탐색 → 휴식
 
         Args:
-            posts: 피드 탐색용 포스트 (없으면 알림만)
-            notification_weight: 알림 확인 확률 (기본 60%)
+            get_feed_posts: 피드 포스트 가져오는 함수 (없으면 피드 스킵)
+            delay_fn: 딜레이 함수 (테스트용 오버라이드 가능)
         """
-        activity_weight = self._get_notification_weight()
-        final_weight = activity_weight if activity_weight is not None else notification_weight
-        roll = random.random()
+        start_time = time.time()
+        result = SessionResult()
+        self.session_count += 1
 
-        # 알림 우선 (notification_weight 확률)
-        if roll < final_weight:
-            logger.info(f"[Social] Journey: notification (roll={roll:.2f} < {final_weight:.2f})")
-            result = self.run_notification_journey()
-            if result and result.success:
-                return result
+        # 워밍업 체크
+        warmup_sessions = self.session_config.get('warmup_sessions', 2)
+        is_warmup = self.session_count <= warmup_sessions
 
-        # 피드 탐색
-        if posts:
-            logger.info(f"[Social] Journey: feed (roll={roll:.2f} >= {final_weight:.2f})")
-            result = self.run_feed_journey(posts)
-            if result and result.success:
-                return result
+        if is_warmup:
+            logger.info(f"[Session #{self.session_count}] Warmup mode - read only")
 
-        # 둘 다 실패 시 알림 재시도 (아직 안 했다면)
-        if roll >= final_weight:
-            logger.info(f"[Social] Journey: notification (fallback)")
-            return self.run_notification_journey()
+        # 딜레이 함수 (기본: asyncio.sleep)
+        async def default_delay(seconds: float):
+            await asyncio.sleep(seconds)
 
-        return None
+        do_delay = delay_fn if delay_fn else default_delay
 
-    def _get_notification_weight(self) -> Optional[float]:
-        """activity.yaml 기반 알림 가중치 계산"""
-        journey_weights = self.activity_config.get('social', {}).get('journey_weights', {})
-        if not journey_weights:
-            return None
-        notification = float(journey_weights.get('notification', 0.0))
-        feed = float(journey_weights.get('feed', 0.0))
-        total = notification + feed
-        if total <= 0:
-            return None
-        return notification / total
+        # 세션 내 딜레이 범위
+        intra_delay = self.session_config.get('intra_delay', [2, 8])
+
+        # === Phase 1: 알림 처리 ===
+        notif_cfg = self.session_config.get('notification', {})
+        notif_count_range = notif_cfg.get('count', [3, 8])
+        notif_count = random.randint(notif_count_range[0], notif_count_range[1])
+
+        logger.info(f"[Session #{self.session_count}] Processing up to {notif_count} notifications")
+
+        for i in range(notif_count):
+            try:
+                notif_result = self.run_notification_journey(process_limit=1)
+                if notif_result and notif_result.success:
+                    result.notifications_processed += 1
+                    if not is_warmup and notif_result.action_taken:
+                        result.actions_taken.append(f"notif:{notif_result.action_taken}")
+
+                # 세션 내 딜레이
+                delay = random.uniform(intra_delay[0], intra_delay[1])
+                await do_delay(delay)
+
+            except Exception as e:
+                error_str = str(e).lower()
+                if any(code in error_str for code in ['226', '401', '403', 'authorization']):
+                    raise
+                logger.warning(f"[Session] Notification error: {e}")
+                break
+
+        # === Phase 2: 피드 탐색 ===
+        if get_feed_posts:
+            feed_cfg = self.session_config.get('feed', {})
+            browse_range = feed_cfg.get('browse_count', [5, 15])
+            react_range = feed_cfg.get('react_count', [1, 3])
+
+            browse_count = random.randint(browse_range[0], browse_range[1])
+            max_reactions = random.randint(react_range[0], react_range[1])
+
+            logger.info(f"[Session #{self.session_count}] Browsing {browse_count} feeds, max {max_reactions} reactions")
+
+            try:
+                posts = get_feed_posts()
+                posts_to_browse = posts[:browse_count] if posts else []
+                reactions = 0
+
+                for post in posts_to_browse:
+                    result.feeds_browsed += 1
+
+                    if reactions < max_reactions and not is_warmup:
+                        feed_result = self.run_feed_journey([post], process_limit=1)
+                        if feed_result and feed_result.success and feed_result.action_taken:
+                            result.feeds_reacted += 1
+                            result.actions_taken.append(f"feed:{feed_result.action_taken}")
+                            reactions += 1
+
+                    # 스크롤 딜레이
+                    delay = random.uniform(intra_delay[0] * 0.5, intra_delay[1] * 0.5)
+                    await do_delay(delay)
+
+            except Exception as e:
+                error_str = str(e).lower()
+                if any(code in error_str for code in ['226', '401', '403', 'authorization']):
+                    raise
+                logger.warning(f"[Session] Feed error: {e}")
+
+        result.duration_seconds = time.time() - start_time
+        logger.info(
+            f"[Session #{self.session_count}] Done: "
+            f"{result.notifications_processed} notifs, "
+            f"{result.feeds_browsed} browsed, "
+            f"{result.feeds_reacted} reacted, "
+            f"{result.total_actions} actions in {result.duration_seconds:.1f}s"
+        )
+
+        return result
+
+    def get_session_interval(self) -> tuple[int, int]:
+        """세션 간 휴식 시간 반환 (초)"""
+        interval = self.session_config.get('interval', [1800, 7200])
+        return interval[0], interval[1]
+
+    def is_warmup(self) -> bool:
+        """현재 워밍업 상태인지"""
+        warmup_sessions = self.session_config.get('warmup_sessions', 2)
+        return self.session_count < warmup_sessions
