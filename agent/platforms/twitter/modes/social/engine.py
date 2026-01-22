@@ -76,7 +76,8 @@ class SocialEngine:
         feed_cfg = self.session_config.get('feed', {})
         feed_selection = {
             'familiar_first': feed_cfg.get('familiar_first', True),
-            'random_discovery_prob': feed_cfg.get('random_discovery_prob', 0.1)
+            'random_discovery_prob': feed_cfg.get('random_discovery_prob', 0.1),
+            'language_filter': feed_cfg.get('language_filter')
         }
         self.feed_journey = FeedJourney(
             self.memory_db,

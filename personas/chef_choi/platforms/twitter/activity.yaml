@@ -25,6 +25,7 @@ session:
     react_count: [1, 3]     # 반응할 개수
     familiar_first: true
     random_discovery_prob: 0.10
+    language_filter: "korean"  # "korean", "english", null (필터 없음)
 
   # 프로필 방문 (팔로잉 직접 확인)
   profile_visit:
