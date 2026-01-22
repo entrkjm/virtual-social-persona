@@ -4,6 +4,7 @@ requests
 tweepy
 google-genai
 chromadb>=1.0.0
+nest_asyncio
 twikit==2.3.3
 DrissionPage==4.1.1.2
 google-cloud-aiplatform==1.133.0
