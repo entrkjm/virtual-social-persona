@@ -160,6 +160,14 @@ class ReplyGenerator:
                 parts.append("\n이 글은 내 글에 대한 답글입니다.")
             if context.get('topic'):
                 parts.append(f"주제: {context.get('topic')}")
+            if context.get('existing_replies'):
+                existing = context['existing_replies']
+                parts.append(f"\n[이 글에 달린 기존 답글 {len(existing)}개]")
+                for r in existing[:5]:
+                    r_user = r.get('user', 'unknown')
+                    r_text = (r.get('text', '') or '')[:40]
+                    parts.append(f"- @{r_user}: {r_text}")
+                parts.append("기존 답글과 겹치지 않는 새로운 내용으로 작성하세요.")
 
         if recent_replies:
             parts.append("\n[최근 내 답글 - 이와 다른 말투/어미로 작성]")

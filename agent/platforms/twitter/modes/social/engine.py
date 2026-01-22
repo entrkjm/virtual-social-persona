@@ -13,6 +13,7 @@ from typing import Optional, Dict, Any, List, Callable
 from agent.core.logger import logger
 from agent.memory.database import MemoryDatabase
 from agent.memory.factory import MemoryFactory
+from agent.platforms.twitter.api.social import get_tweet_replies
 
 from .journeys.notification import NotificationJourney
 from .journeys.feed import FeedJourney
@@ -274,12 +275,28 @@ class SocialEngine:
                     user = post.get('user', 'unknown')
                     text = post.get('text', '')
                     text_preview = (text[:40] + '...') if text else ''
+                    post_id = post.get('id')
 
                     # 읽기 딜레이 (human-like)
                     if reading_cfg and text:
                         read_delay = self._calc_reading_delay(text, reading_cfg)
                         logger.info(f"[Feed] Reading @{user}'s post ({read_delay:.1f}s)")
                         await do_delay(read_delay)
+
+                    # 댓글 가져오기 + 읽기 딜레이
+                    replies = []
+                    if post_id and not is_warmup and reactions < max_reactions:
+                        try:
+                            replies = get_tweet_replies(str(post_id))
+                            if replies:
+                                logger.info(f"[Feed] Reading {len(replies)} replies...")
+                                # 댓글 읽기 딜레이 (댓글당 1-2초)
+                                replies_delay = len(replies) * random.uniform(1.0, 2.0)
+                                replies_delay = min(replies_delay, 8.0)  # 최대 8초
+                                await do_delay(replies_delay)
+                                post['replies'] = replies  # 컨텍스트로 전달
+                        except Exception as e:
+                            logger.debug(f"[Feed] Failed to get replies: {e}")
 
                     if is_warmup:
                         logger.info(f"[Feed] @{user}: {text_preview} (warmup)")

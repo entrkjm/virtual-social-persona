@@ -62,6 +62,7 @@ class EngagementJudge:
 1. 관계: 아는 사람이면 더 적극적으로 반응
 2. 내용: 공감가면 like, 공유할 가치 있으면 repost, 할 말 있으면 reply
 3. 컨텍스트: 내 글에 대한 반응이면 더 신경 써서 대응
+4. 기존 답글: 이미 비슷한 답글이 달려있으면 reply 안 함
 
 반드시 아래 JSON 형식으로만 응답하세요:
 {"like": true/false, "repost": true/false, "reply": true/false, "reply_type": "short|normal|long 또는 null", "reason": "짧은 이유"}"""
@@ -122,6 +123,14 @@ class EngagementJudge:
                 parts.append("- 내 글에 대한 답글임")
             if extra_context.get('is_question'):
                 parts.append("- 질문 형태임")
+            if extra_context.get('replies'):
+                replies = extra_context['replies']
+                parts.append(f"\n기존 답글 ({len(replies)}개):")
+                for r in replies[:5]:  # 최대 5개만
+                    r_user = r.get('user', 'unknown')
+                    r_text = (r.get('text', '') or '')[:50]
+                    parts.append(f"  - @{r_user}: {r_text}")
+                parts.append("(이미 비슷한 내용의 답글이 있으면 reply 안 해도 됨)")
 
         parts.append("\n어떻게 반응할지 JSON으로 응답하세요.")
         return "\n".join(parts)

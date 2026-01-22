@@ -84,11 +84,16 @@ class FamiliarPersonScenario(BaseScenario):
 
     def _judge(self, context: ScenarioContext) -> JudgmentResult:
         """LLM 기반 판단 - 독립적 액션"""
+        # replies가 있으면 extra_context로 전달
+        extra_context = None
+        if context.extra and context.extra.get('post', {}).get('replies'):
+            extra_context = {'replies': context.extra['post']['replies']}
+
         return self.judge.judge(
             post_text=context.post_text or "",
             person=context.person,
             scenario_type='familiar_person_post',
-            extra_context=None
+            extra_context=extra_context
         )
 
     def _execute_actions(
@@ -119,11 +124,17 @@ class FamiliarPersonScenario(BaseScenario):
         if judgment.reply:
             logger.info(f"[Scenario:FamiliarPerson] Executing: reply (type={judgment.reply_type or 'normal'})")
             recent_replies = self.get_recent_replies(limit=5)
+            # 기존 답글 context
+            existing_replies = None
+            if context.extra and context.extra.get('post', {}).get('replies'):
+                existing_replies = context.extra['post']['replies']
+
             reply_content = self.reply_gen.generate(
                 post_text=context.post_text or "",
                 person=context.person,
                 reply_type=judgment.reply_type or 'normal',
-                recent_replies=recent_replies
+                recent_replies=recent_replies,
+                context={'existing_replies': existing_replies} if existing_replies else None
             )
 
             if reply_content:
