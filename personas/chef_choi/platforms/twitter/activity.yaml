@@ -56,3 +56,29 @@ step_interval:
   min: 45
   max: 180
   warmup_steps: 5
+
+# ===== 활동 스케줄 (수면/휴식 패턴) =====
+activity_schedule:
+  sleep_pattern:
+    base_sleep_start: 1
+    base_wake_time: 7
+    variance:
+      sleep_start: 2
+      wake_time: 1.5
+    exceptions:
+      late_night_probability: 0.15
+      early_wake_probability: 0.10
+      midnight_check_probability: 0.08
+  hourly_activity:
+    "07-09": 0.3
+    "09-12": 0.7
+    "12-14": 0.5
+    "14-18": 0.8
+    "18-22": 1.0
+    "22-01": 0.6
+  random_breaks:
+    enabled: true
+    probability: 0.05
+  random_off_day:
+    enabled: true
+    probability: 0.05
