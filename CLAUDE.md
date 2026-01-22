@@ -7,21 +7,35 @@ Virtuals Protocol G.A.M.E SDK 기반 자율형 트위터 AI 에이전트. 사람
 ```
 main.py (Entry)
     ↓
-run_with_sdk() 또는 run_standalone() (USE_VIRTUAL_SDK 설정)
+run_standalone_async() (USE_VIRTUAL_SDK 설정)
     ↓
 ActivityScheduler (수면/활동 패턴 확인)
     ↓
-step() 루프 (ModeManager에 따라 가변 간격)
+session() 루프 (세션 기반, 30분-2시간 간격)
     ↓
 Mode Selection (activity.yaml 가중치):
-├─ Social (97%) → SocialEngineV2
-│   ├─ 60% → NotificationJourney (알림 우선)
+├─ Social (97%) → SocialEngine.session()
+│   ├─ Phase 1: 알림 배치 처리 (3-8개)
 │   │   └─ ReceivedComment/Mentioned/Quoted/NewFollower Scenario
-│   └─ 40% → FeedJourney (피드 탐색)
-│       └─ Rule-based 분류 → 1개 선택 → LLM 판단 (1회)
+│   └─ Phase 2: 피드 배치 탐색 (5-15개 확인, 1-3개 반응)
+│       └─ FamiliarPerson/InterestingPost Scenario
 ├─ Casual (2%) → Trigger Engine + Post Generator
 └─ Series (1%) → Planner → Writer → Studio → Archiver
 ```
+
+### 세션 기반 구조 (v3)
+
+사람 패턴 모사: **폰 켜서 알림 쭉 확인 → 피드 스크롤 → 폰 내려놓기 → 반복**
+
+```
+Session Start
+├── 알림 처리 (3-8개, intra_delay 2-8초)
+├── 피드 탐색 (5-15개 확인, 1-3개 반응)
+├── (선택) 독립 포스팅
+Session End → 휴식 30분-2시간 → 다음 Session
+```
+
+**장점**: bursty한 활동 패턴으로 봇 탐지 회피, 더 자연스러운 소통
 
 ### Mode-Based Architecture (Platform-First)
 
@@ -32,24 +46,28 @@ Mode Selection (activity.yaml 가중치):
 | **Series** | 콘텐츠 시리즈 | `engine.py`, `planner.py`, `writer.py`, `studio/` | 스케줄링된 포스팅 |
 | **Learning** | 트렌드/지식 습득 | `trend_learner.py` | 주기적 트렌드 수집 |
 
-### Social Engine V2 (Scenario-Based)
+### Social Engine (Session-Based v3)
 
-Social Mode의 새로운 시나리오 기반 아키텍처:
+세션 기반 시나리오 아키텍처:
 
 ```
-SocialEngineV2.step()
+SocialEngine.session()
     ↓
-┌─ 60% → NotificationJourney
-│   └─ 알림 확인 → 시나리오 매칭 → 실행
-│       ├─ ReceivedCommentScenario (내 글에 댓글)
-│       ├─ MentionedScenario (멘션)
-│       ├─ QuotedScenario (인용)
-│       └─ NewFollowerScenario (팔로우)
-│
-└─ 40% → FeedJourney
-    └─ Rule-based 분류 (LLM 0회) → 1개 선택 → LLM 판단 (1회)
-        ├─ FamiliarPersonScenario (아는 사람 글)
-        └─ InterestingPostScenario (관심 키워드 매칭)
+Phase 1: 알림 배치 (3-8개)
+├─ 알림 가져오기 → 이미 처리된 알림 필터링
+├─ 시나리오 매칭 → 실행 (intra_delay 2-8초)
+│   ├─ ReceivedCommentScenario (내 글에 댓글)
+│   ├─ MentionedScenario (멘션)
+│   ├─ QuotedScenario (인용)
+│   └─ NewFollowerScenario (팔로우)
+└─ 처리 완료 기록 (processed_notifications)
+    ↓
+Phase 2: 피드 배치 (5-15개 확인, 1-3개 반응)
+├─ Rule-based 분류 (LLM 0회)
+├─ 1개씩 LLM 판단 (최대 react_count개)
+│   ├─ FamiliarPersonScenario (아는 사람 글)
+│   └─ InterestingPostScenario (관심 키워드 매칭)
+└─ 스크롤 딜레이 (1-4초)
 ```
 
 | 컴포넌트 | 위치 | 역할 |
@@ -107,9 +125,8 @@ virtual/
 │   │   └── vector_store.py     # ChromaDB 벡터 검색
 │   ├── knowledge/              # 세상 지식
 │   │   └── knowledge_base.py   # 트렌드/키워드 컨텍스트 학습
-│   ├── persona/                # 페르소나 관련 (3개 모듈)
+│   ├── persona/                # 페르소나 관련 (2개 모듈)
 │   │   ├── persona_loader.py   # YAML 로딩 (중앙 진입점)
-│   │   ├── pattern_tracker.py  # 말투 패턴 추적
 │   │   └── relationship_manager.py # 유저 관계 추적
 │   └── platforms/              # 플랫폼별 로직
 │       ├── interface.py        # 플랫폼 어댑터 인터페이스
@@ -152,15 +169,14 @@ personas/                       # 페르소나 설정 (계층 구조)
 ├── _template/                  # 페르소나 템플릿
 └── chef_choi/                  # 활성 페르소나
     ├── identity.yaml            # 핵심 정체성 (이름, 도메인, 성격)
-    ├── speech_style.yaml        # 말투 패턴 & 시그니처
+    ├── speech_style.yaml        # 말투 예시 기반 (간소화됨)
     ├── behavior.yaml            # 행동 확률 모델 & 휴먼라이크 설정
-    ├── mood.yaml                # 기분 & 스케줄
     ├── core_relationships.yaml  # 핵심 관계
     ├── prompt.txt              # 시스템 프롬프트
     └── platforms/              # 플랫폼별 분리
         └── twitter/
             ├── config.yaml      # 플랫폼 제약 & 문자 규칙
-            ├── step_schedule.yaml # 활동 비중 (scout/mentions/post)
+            ├── activity.yaml    # 세션 설정 + 모드 가중치 + human-like
             └── modes/          # 모드 통합 (config+style)
                 ├── casual/     # config.yaml + style.yaml
                 ├── series/     # config.yaml + style.yaml + studio.yaml
@@ -184,7 +200,7 @@ tests/                         # 테스트 파일
 | `agent/core/base_generator.py` | 콘텐츠 생성 베이스 클래스 |
 | `agent/core/behavior_engine.py` | BehaviorEngine + HumanLikeController (워밍업/지연/버스트 방지) |
 | `agent/core/interaction_intelligence.py` | LLM 기반 트윗 분석/판단 + ResponseType 결정 |
-| `agent/core/mode_manager.py` | 모드 시스템 (normal/test/aggressive) + step 확률 관리 |
+| `agent/core/mode_manager.py` | 모드 시스템 (normal/test/aggressive) + 세션 간격 관리 |
 | `agent/core/activity_scheduler.py` | 사람다운 휴식 패턴 (수면/시간대별 활동/랜덤 휴식/오프데이) |
 | `agent/core/topic_selector.py` | 가중치 기반 토픽 선택 (core/time/curiosity/trends/inspiration) |
 | `agent/core/follow_engine.py` | 점수 기반 팔로우 판단 + 지연 큐 |
@@ -194,7 +210,6 @@ tests/                         # 테스트 파일
 | `agent/memory/factory.py` | 메모리 DI 팩토리 (페르소나별 메모리 인스턴스) |
 | `agent/knowledge/knowledge_base.py` | 트렌드/키워드 컨텍스트 학습 (요약, 관련도, 내 관점) |
 | `agent/persona/persona_loader.py` | YAML 기반 페르소나 로딩 (중앙 로딩 지점) |
-| `agent/persona/pattern_tracker.py` | 3-Layer 말투 패턴 추적 (signature/frequent/filler/contextual) |
 | `agent/persona/relationship_manager.py` | 유저 관계 추적 (사전정의 + 동적) |
 | `agent/platforms/interface.py` | 플랫폼 어댑터 인터페이스 (SocialPlatformAdapter) |
 | `agent/platforms/twitter/adapter.py` | TwitterAdapter - platforms/twitter/social.py 래퍼 |
@@ -377,12 +392,11 @@ personas/                               # 페르소나 설정 (계층 구조)
 
 | 파일 | 역할 | 새 페르소나 시 수정 필요 |
 |------|------|------------------------|
-| `identity.yaml` | 이름, 직업, 도메인, 키워드, 행동 확률 | ✅ 필수 |
-| `speech_style.yaml` | 말투 패턴, 시그니처, content_review | ✅ 필수 |
+| `identity.yaml` | 이름, 직업, 도메인, 키워드 | ✅ 필수 |
+| `speech_style.yaml` | 말투 예시, 피해야 할 표현 | ✅ 필수 |
 | `prompt.txt` | LLM 시스템 프롬프트 | ✅ 필수 |
-| `mood.yaml` | 시간대별 기분, 활동 스케줄 | 선택 (기본값 OK) |
 | `core_relationships.yaml` | 특정 유저와의 관계 정의 | 선택 |
-| `platforms/twitter/activity.yaml` | 모드 가중치, human-like 타이밍 | ✅ 성격별 조정 |
+| `platforms/twitter/activity.yaml` | 세션 설정, 모드 가중치, human-like | ✅ 성격별 조정 |
 | `platforms/twitter/modes/social/config.yaml` | quip_pool, follow, interaction_patterns | ✅ 도메인별 수정 |
 | `platforms/twitter/modes/social/style.yaml` | 답글 말투, 전문가 회피 문구 | ✅ 도메인별 수정 |
 | `platforms/twitter/modes/series/studio.yaml` | 이미지 생성 스타일 | ✅ 도메인별 수정 |
@@ -391,19 +405,21 @@ personas/                               # 페르소나 설정 (계층 구조)
 
 ```
 identity.yaml (Base)
-    └── behavior.probability_model     → BehaviorEngine
-    └── behavior.action_ratios         → BehaviorEngine.decide_actions()
-    └── core_keywords                  → SocialEngineV2 (FeedJourney 분류)
+    └── core_keywords                  → SocialEngine (FeedJourney 분류)
 
-speech_style.yaml (Speech)
-    └── pattern_registry               → PatternTracker
-    └── content_review                 → BaseContentGenerator (말투 검증)
+speech_style.yaml (Speech - 예시 기반)
+    └── personality_brief              → LLM 프롬프트에 성격 한 줄
+    └── speech_examples                → LLM 참고용 말투 예시
+    └── avoid                          → 피해야 할 표현
 
-platforms/twitter/activity.yaml (Activity - V2)
+platforms/twitter/activity.yaml (Activity - v3 세션 기반)
     └── mode_weights                   → 모드 선택 (social/casual/series)
-    └── social.journey_weights         → Journey 선택 (notification/feed)
+    └── session.interval               → 세션 간 휴식 (30분-2시간)
+    └── session.notification.count     → 세션당 알림 처리 개수
+    └── session.feed.browse_count      → 세션당 피드 확인 개수
+    └── session.intra_delay            → 세션 내 작업 간 딜레이
     └── human_like                     → 읽기/생각/타이핑/전환 딜레이
-    └── step_interval                  → 스텝 간격 + 워밍업
+    └── activity_schedule              → 수면/휴식 패턴
 
 platforms/twitter/modes/social/
     ├── config.yaml (통합)
@@ -446,11 +462,11 @@ PERSONA_NAME=new_persona python main.py
    - [ ] `core_keywords` 변경
    - [ ] `agent_goal`, `agent_description` 변경
 
-2. **speech_style.yaml**
-   - [ ] `signature_phrases` 변경 (캐릭터 어록)
-   - [ ] `sentence_patterns` 변경 (말투 패턴)
-   - [ ] `reactions` 변경 (상황별 반응)
-   - [ ] `energy_levels` 비우거나 커스터마이즈 (선택)
+2. **speech_style.yaml** (예시 기반)
+   - [ ] `personality_brief` 변경 (성격 한 줄)
+   - [ ] `tone` 변경 (말투 톤)
+   - [ ] `speech_examples` 변경 (실제 말투 예시 6-10개)
+   - [ ] `avoid` 변경 (피해야 할 전문가 표현)
 
 3. **prompt.txt**
    - [ ] 전체 다시 작성
@@ -462,35 +478,71 @@ PERSONA_NAME=new_persona python main.py
    - [ ] `constraints.avoid_expert_phrases` 변경 ("요리사로서..." → "개발자로서...")
    - [ ] `review.speech_examples` 변경
 
-### Pattern Registry (speech_style.yaml)
+### speech_style.yaml (예시 기반 - v3)
 ```yaml
-pattern_registry:
-  signature:    # 시그니처 표현 (5포스트당 1회)
-    patterns: ["나야~ 들기름"]
-    cooldown_posts: 5
-  frequent:     # 자주 쓰는 어미 (연속 2회 제한)
-    patterns: ["~거든요", "~인 거죠"]
-    max_consecutive: 2
-  filler:       # 채움말 (글당 1회)
-    patterns: ["음...", "어..."]
-    max_per_post: 1
-  contextual:   # 맥락별 조절
-    serious_topic: { avoid: ["ㅎㅎ"], prefer: ["~입니다"] }
+# 성격 한 줄
+personality_brief: "내성적이지만 요리 얘기엔 눈 반짝. 말 아끼지만 진심 담김."
 
-speech_style:   # 콘텐츠 생성 스타일 분리
-  chat:         # 답글/대화 모드
-    length: { min: 20, max: 150 }
-    tone: "친근하고 도움주는"
-    starters: ["음...", "아..."]
-    endings: ["~요", "~거든요"]
-  post:         # 독립 포스팅 모드
-    length: { min: 30, max: 280 }
-    tone: "짧고 임팩트 있게"
-    starters: ["갑자기 생각났는데", "요즘 느끼는 건데"]
-    endings: ["~임", "..."]
+# 톤 설명
+tone: "친근하지만 과하지 않게. 전문가 티 안 내고 자연스럽게."
+
+# 실제 말투 예시 (LLM 참고용)
+speech_examples:
+  - "음... 그건 좀 다르게 봐야 할 것 같아요"
+  - "아, 그거 저도 해봤는데 괜찮더라고요"
+  - "소금 살짝 더 넣으면 완전 달라져요"
+
+# 피해야 할 표현
+avoid:
+  - "요리사로서 말씀드리면"
+  - "전문가 입장에서"
+
+# 문장 시작/종결 풀 (랜덤 선택용)
+opener_pool: ["음...", "어...", "그게...", "아 그러고보니"]
+closer_pool: ["~거든요", "~인 거죠", "~같아요", "~인데..."]
 ```
 
+**핵심 변경**: 규칙 기반(pattern_registry) → 예시 기반(speech_examples)
+- 시그니처 반복 문제 해결
+- LLM이 예시 참고해서 자연스럽게 변형
+
 ### 모드별 설정 예시
+
+#### Activity Config (`platforms/twitter/activity.yaml` - 세션 기반 v3)
+```yaml
+# 모드 가중치
+mode_weights:
+  social: 0.97
+  casual: 0.02
+  series: 0.01
+
+# 세션 기반 활동
+session:
+  interval: [1800, 7200]      # 세션 간 휴식 (30분-2시간)
+
+  notification:
+    count: [3, 8]             # 세션당 알림 처리 개수
+    priority_boost:
+      mention: 1.5
+      reply: 1.3
+
+  feed:
+    browse_count: [5, 15]     # 확인할 피드 개수
+    react_count: [1, 3]       # 반응할 개수
+    familiar_first: true
+
+  intra_delay: [2, 8]         # 세션 내 작업 간 딜레이 (초)
+  warmup_sessions: 2          # 워밍업 세션 (읽기만)
+
+# 수면/휴식 패턴
+activity_schedule:
+  sleep_pattern:
+    base_sleep_start: 1
+    base_wake_time: 7
+  hourly_activity:
+    "07-09": 0.3
+    "18-22": 1.0
+```
 
 #### Casual Mode Style (`platforms/twitter/modes/casual/style.yaml`)
 ```yaml
@@ -581,17 +633,17 @@ quip_pool:
 
 ## Mode System
 
-### Platform-First Mode Architecture
+### 세션 기반 Mode Architecture (v3)
 
 `agent/core/mode_manager.py` + 환경변수 `AGENT_MODE`
 
 ### Execution Control Modes (normal/test/aggressive)
 
-| Mode | 간격 | Scout | Mentions | Post | 워밍업 | 수면 | 휴식 |
-|------|------|-------|----------|------|--------|------|------|
-| **normal** | 60-180s | 80% | 15% | 5% | 5스텝 | O | O |
-| **test** | 15-45s | 75% | 15% | 10% | 2스텝 | X | X |
-| **aggressive** | 8-20s | 70% | 15% | 15% | 0스텝 | X | X |
+| Mode | 세션 간격 | 워밍업 세션 | 수면 | 휴식 |
+|------|----------|-----------|------|------|
+| **normal** | 30분-2시간 | 2 | O | O |
+| **test** | 1-3분 | 0 | X | X |
+| **aggressive** | 15-45초 | 0 | X | X |
 
 | Mode | Like | Repost | Comment |
 |------|------|--------|---------|
@@ -665,42 +717,55 @@ series:
 ### Mode Integration Flow
 
 ```python
-# Main Loop (main.py)
-step_probs = mode_manager.get_step_probabilities(persona.behavior)
+# Main Loop (main.py - async)
+async def run_standalone_async():
+    while True:
+        # 수면/휴식 체크
+        if mode_manager.config.sleep_enabled:
+            is_active, state, _ = activity_scheduler.is_active_now()
+            if not is_active:
+                await asyncio.sleep(sleep_seconds)
+                continue
 
-if roll < step_probs['scout']:
-    social_agent.scout_and_respond()  # Social + 6-Stage Pipeline
-elif roll < step_probs['scout'] + step_probs['mentions']:
-    social_agent.check_mentions()     # Social + Reply Generator
-else:
-    social_agent.post_tweet_executable() # Casual + Series (scheduled)
+        # 모드 선택 (activity.yaml의 mode_weights)
+        roll = random.random()
+        if roll < mode_weights['social']:
+            result = await social_agent.run_social_session()  # 세션 실행
+        elif roll < mode_weights['social'] + mode_weights['casual']:
+            social_agent.post_tweet_executable()
+        else:
+            social_agent.run_series_step()
+
+        # 세션 간 휴식
+        session_min, session_max = mode_manager.get_session_interval()
+        await asyncio.sleep(random.randint(session_min, session_max))
 ```
 
 ### 동작 방식
-- **normal**: 페르소나 `behavior.yaml`의 `independent_actions` 값 그대로 사용 (프로덕션용)
-- **test/aggressive**: 모드별 고정 확률로 오버라이드 (개발용)
+- **normal**: 페르소나 `activity.yaml`의 세션 설정 사용 (프로덕션용)
+- **test/aggressive**: 짧은 세션 간격으로 오버라이드 (개발용)
 - 226 에러 발생 시 aggressive → normal 자동 전환
 - 연속 3회 에러 시 normal로 전환 + 5분 정지
 
 ### 페르소나 이식성
 ```
 normal 모드 = 페르소나 100% 존중
-├── 확률: behavior.yaml의 probability_model
+├── 세션: activity.yaml의 session 설정
 ├── 성격: identity.yaml의 personality
-└── 스타일: speech_style.yaml
+└── 스타일: speech_style.yaml (예시 기반)
 
 → 페르소나 폴더 복사 + active_persona.yaml 변경 = 완전 교체
 ```
 
 ### 사용 예시
 ```bash
-# normal 모드 (기본)
+# normal 모드 (기본, 30분-2시간 간격)
 AGENT_MODE=normal python main.py
 
-# test 모드 (빠른 테스트)
+# test 모드 (1-3분 간격)
 AGENT_MODE=test python main.py
 
-# aggressive 모드 (실험용, 봇 감지 위험)
+# aggressive 모드 (15-45초 간격, 봇 감지 위험)
 AGENT_MODE=aggressive python main.py
 ```
 
@@ -908,12 +973,14 @@ theme: 반복 테마 (used ≥ 3)
 ## Dev Notes
 
 - 페르소나 구조 확정: `personas/{name}/` 폴더 기반
+- **세션 기반 활동 (v3)**: step 반복 → session 반복 (더 사람다운 bursty 패턴)
+- **알림 중복 처리**: `processed_notifications`로 이미 처리한 알림 필터링
+- **speech_style 간소화**: 규칙 기반 → 예시 기반 (pattern_tracker.py 삭제)
 - Threads 연동 deprecated (API 실패)
 - 관계도 시스템: 정규식 매칭 + 조건부 평가 지원
-- Memory decay: 10 step마다 curiosity 감쇠 (0.7 비율)
-- Pattern Tracker: SQLite로 패턴 사용 기록 (`data/memory.db`)
+- Memory decay: 5 session마다 curiosity 감쇠 (0.7 비율)
 - Follow Engine: 지연 실행 큐로 봇 감지 회피
-- Activity Scheduler: 시간대별 활동 강도로 step 간격 동적 조절
+- Activity Scheduler: 시간대별 활동 강도로 세션 간격 동적 조절
 - Mode Manager: 226 에러 시 자동 안전 모드 전환
 - TopicSelector: 가중치 기반 토픽 선택 (core=1.0, time=1.2, curiosity=2.0, inspiration=2.5, trends=1.5)
 - **Knowledge Base**: 트렌드 키워드 조사 후 컨텍스트 저장 (24h 만료)
