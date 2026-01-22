@@ -3,7 +3,7 @@ Base Scenario
 시나리오의 공통 인터페이스 정의
 """
 from abc import ABC, abstractmethod
-from typing import Optional, Any, Dict
+from typing import Optional, Any, Dict, List
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -114,3 +114,8 @@ class BaseScenario(ABC):
             conv.state = 'concluded'
 
         self.memory_db.update_conversation(conv)
+
+    def get_recent_replies(self, limit: int = 5) -> List[str]:
+        """최근 답글 내용 조회 (말투 반복 방지용)"""
+        episodes = self.memory_db.get_recent_episodes(limit=limit * 2, type_filter='replied')
+        return [e.content for e in episodes if e.content][:limit]

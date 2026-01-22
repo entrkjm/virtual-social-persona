@@ -5,7 +5,7 @@ LLM 기반 답글 생성
 EngagementJudge가 reply로 결정한 후 호출
 """
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 from core.llm import llm_client
 from agent.memory.database import PersonMemory
@@ -50,7 +50,8 @@ class ReplyGenerator:
         post_text: str,
         person: Optional[PersonMemory] = None,
         reply_type: str = 'normal',
-        context: Optional[Dict[str, Any]] = None
+        context: Optional[Dict[str, Any]] = None,
+        recent_replies: Optional[List[str]] = None
     ) -> str:
         """
         답글 생성
@@ -60,9 +61,10 @@ class ReplyGenerator:
             person: 상대방 PersonMemory
             reply_type: 'short', 'normal', 'long'
             context: 추가 컨텍스트
+            recent_replies: 최근 답글 5개 (말투 반복 방지용)
         """
         logger.debug(f"[ReplyGen] Generating: type={reply_type}, person={person.screen_name if person else 'N/A'}")
-        prompt = self._build_prompt(post_text, person, reply_type, context)
+        prompt = self._build_prompt(post_text, person, reply_type, context, recent_replies)
 
         try:
             logger.debug("[ReplyGen] Calling LLM...")
@@ -79,7 +81,8 @@ class ReplyGenerator:
         post_text: str,
         person: Optional[PersonMemory],
         reply_type: str,
-        context: Optional[Dict[str, Any]]
+        context: Optional[Dict[str, Any]],
+        recent_replies: Optional[List[str]] = None
     ) -> str:
         """프롬프트 생성"""
         length_guide = {
@@ -102,6 +105,12 @@ class ReplyGenerator:
                 parts.append("\n이 글은 내 글에 대한 답글입니다.")
             if context.get('topic'):
                 parts.append(f"주제: {context.get('topic')}")
+
+        if recent_replies:
+            parts.append("\n[최근 내 답글 - 이와 다른 말투/어미로 작성]")
+            for i, reply in enumerate(recent_replies[:5], 1):
+                parts.append(f"{i}. {reply}")
+            parts.append("위 답글들과 다른 시작 표현, 다른 어미를 사용하세요.")
 
         parts.append(f"\n{length_guide} 답글을 작성하세요.")
         return "\n".join(parts)

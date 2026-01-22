@@ -105,10 +105,12 @@ class InterestingPostScenario(BaseScenario):
 
         if action == 'reply':
             logger.info(f"[Scenario:InterestingPost] Action: reply (type={decision.get('reply_type', 'normal')})")
+            recent_replies = self.get_recent_replies(limit=5)
             reply_content = self.reply_gen.generate(
                 post_text=context.post_text or "",
                 person=context.person,
-                reply_type=decision.get('reply_type', 'normal')
+                reply_type=decision.get('reply_type', 'normal'),
+                recent_replies=recent_replies
             )
 
             if not reply_content:
