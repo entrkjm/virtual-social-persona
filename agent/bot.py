@@ -1039,8 +1039,10 @@ class SocialAgent:
             logger.error(f"[Social] Step failed: {e}")
             return FunctionResultStatus.FAILED, f"[Social] Error: {e}", {}
 
-    def _fetch_posts_for_feed(self) -> list:
-        """Feed Journey용 posts 검색"""
+    def _fetch_posts_for_feed(self, target_count: int = 10) -> list:
+        """Feed Journey용 posts 검색 - 여러 키워드로 시도"""
+        import random
+
         hour = datetime.now().hour
         core_keywords = self.persona.core_keywords
         time_kw_config = self.persona.behavior.get('time_keywords', {})
@@ -1059,30 +1061,49 @@ class SocialAgent:
         if not time_keywords:
             time_keywords = core_keywords
 
-        search_query, source = self.topic_selector.select(
-            core_keywords=core_keywords,
-            time_keywords=time_keywords,
-            curiosity_keywords=agent_memory.get_top_interests(limit=10),
-            trend_keywords=[],
-            inspiration_topics=[]
-        )
-
-        logger.info(f"[Social] Feed query={search_query} (source={source})")
-        posts = self.adapter.search(search_query, count=8)
+        # 검색 키워드 풀 구성
+        all_keywords = list(set(core_keywords + time_keywords))
+        random.shuffle(all_keywords)
 
         posts_data = []
-        if posts:
-            for post in posts:
-                posts_data.append({
-                    'id': post.id,
-                    'user_id': post.user.id if post.user else '',
-                    'user': post.user.username if post.user else '',
-                    'text': post.text,
-                    'engagement': {
-                        'favorite_count': getattr(post, 'favorite_count', 0),
-                        'retweet_count': getattr(post, 'retweet_count', 0)
-                    }
-                })
+        seen_ids = set()
+        max_attempts = min(5, len(all_keywords))
+
+        for attempt in range(max_attempts):
+            if len(posts_data) >= target_count:
+                break
+
+            search_query, source = self.topic_selector.select(
+                core_keywords=core_keywords,
+                time_keywords=time_keywords,
+                curiosity_keywords=agent_memory.get_top_interests(limit=10),
+                trend_keywords=[],
+                inspiration_topics=[]
+            )
+
+            logger.info(f"[Social] Feed query={search_query} (source={source}, attempt={attempt+1})")
+            posts = self.adapter.search(search_query, count=8)
+
+            if posts:
+                for post in posts:
+                    if post.id in seen_ids:
+                        continue
+                    seen_ids.add(post.id)
+                    posts_data.append({
+                        'id': post.id,
+                        'user_id': post.user.id if post.user else '',
+                        'user': post.user.username if post.user else '',
+                        'text': post.text,
+                        'engagement': {
+                            'favorite_count': getattr(post, 'favorite_count', 0),
+                            'retweet_count': getattr(post, 'retweet_count', 0)
+                        }
+                    })
+                logger.info(f"[Social] Feed fetched {len(posts)} posts, total={len(posts_data)}")
+
+        if not posts_data:
+            logger.warning(f"[Social] No posts found after {max_attempts} attempts")
+
         return posts_data
 
     def run_series_step(self) -> Tuple[FunctionResultStatus, str, Dict[str, Any]]:

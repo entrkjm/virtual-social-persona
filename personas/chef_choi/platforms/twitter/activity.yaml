@@ -9,7 +9,7 @@ mode_weights:
 # ===== Level 2: 세션 기반 활동 =====
 session:
   # 세션 간 휴식 시간 (초)
-  interval: [1800, 7200]  # 30분 ~ 2시간
+  interval: [180, 720]  # 30분 ~ 2시간
 
   # 알림 처리
   notification:
