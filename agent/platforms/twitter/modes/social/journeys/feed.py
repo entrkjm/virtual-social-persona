@@ -1,9 +1,8 @@
 """
 Feed Journey
-피드 탐색 → 분류 → 1개 선택 → 시나리오 실행
+피드 탐색 → LLM 필터링 → 분류 → 1개 선택 → 시나리오 실행
 
-HYBRID v1: Rule-based classification → priority selection → LLM judgment on 1 post
-TODO(v2): Per-post individual LLM judgment
+v2: LLM filter (batch) → Rule-based classification → priority selection → LLM judgment
 """
 import logging
 import random
@@ -12,6 +11,7 @@ from dataclasses import dataclass
 
 from .base import BaseJourney, JourneyResult
 from agent.memory.database import MemoryDatabase, PersonMemory
+from ..judgment.feed_filter import FeedFilter
 
 logger = logging.getLogger("agent")
 
@@ -56,12 +56,20 @@ class FeedJourney(BaseJourney):
     ):
         super().__init__(memory_db, platform)
         self.core_interests = core_interests or []
-        self.persona_config = persona_config
+        self.persona_config = persona_config or {}
         self.feed_selection = feed_selection or {}
         self.random_discovery_prob = self.feed_selection.get(
             'random_discovery_prob', self.RANDOM_DISCOVERY_PROB
         )
         self.familiar_first = self.feed_selection.get('familiar_first', True)
+
+        # LLM 필터 초기화
+        identity = self.persona_config.get('identity', {})
+        occupation = identity.get('occupation', '')
+        personality = identity.get('personality', {})
+        persona_brief = personality.get('brief', occupation) if personality else occupation
+        self.feed_filter = FeedFilter(persona_brief, self.core_interests)
+
         self._init_scenarios()
 
     def _init_scenarios(self):
@@ -87,9 +95,7 @@ class FeedJourney(BaseJourney):
             logger.info("[Feed] No posts provided")
             return None
 
-        logger.info(f"[Feed] Processing {len(posts)} posts")
-
-        # HYBRID v1: Rule-based classification (no LLM)
+        # Rule-based classification (필터링은 engine에서 배치로 처리)
         classified = self._quick_classify_hybrid(posts)
         logger.info(f"[Feed] Classified: familiar={len(classified.familiar)}, interesting={len(classified.interesting)}, others={len(classified.others)}")
 

@@ -118,6 +118,8 @@ class SocialAgent:
         persona_config = {
             'identity': {
                 'name': self.persona.name,
+                'occupation': getattr(self.persona, 'occupation', ''),
+                'personality_brief': getattr(self.persona, 'personality_brief', ''),
                 'personality': personality_cfg,
                 'core_keywords': self.persona.core_keywords,
                 'search_keywords': getattr(self.persona, 'search_keywords', [])

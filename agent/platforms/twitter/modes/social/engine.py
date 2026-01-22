@@ -227,7 +227,22 @@ class SocialEngine:
 
             try:
                 posts = get_feed_posts()
-                posts_to_browse = posts[:browse_count] if posts else []
+                posts_to_browse = []
+
+                if not posts:
+                    logger.info("[Session] No posts fetched")
+                else:
+                    # 배치 필터링 (LLM 1회 호출)
+                    filter_results = self.feed_journey.feed_filter.filter_batch(posts)
+                    passed_ids = {r.post_id for r in filter_results if r.passed}
+                    filtered_posts = [p for p in posts if str(p.get('id', '')) in passed_ids]
+
+                    filtered_out = len(posts) - len(filtered_posts)
+                    if filtered_out > 0:
+                        logger.info(f"[Session] Filtered out {filtered_out}/{len(posts)} posts")
+
+                    posts_to_browse = filtered_posts[:browse_count]
+
                 reactions = 0
 
                 for post in posts_to_browse:
