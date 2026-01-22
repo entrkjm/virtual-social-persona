@@ -5,12 +5,13 @@ Interesting Post Scenario
 HYBRID v1에서 FeedJourney가 rule-based로 선택한 후 실행됨
 """
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 from ..base import BaseScenario, ScenarioResult, ScenarioContext
 from agent.memory.database import MemoryDatabase
 from agent.platforms.twitter.api import social as twitter_api
 from ...judgment import EngagementJudge, ReplyGenerator
+from ...judgment.engagement_judge import JudgmentResult
 
 logger = logging.getLogger("agent")
 
@@ -31,19 +32,19 @@ class InterestingPostScenario(BaseScenario):
     def execute(self, data: Dict[str, Any]) -> Optional[ScenarioResult]:
         """시나리오 실행"""
         logger.info(f"[Scenario:InterestingPost] Starting for @{data.get('user')}")
-        
+
         context = self._gather_context(data)
         if not context:
             logger.warning("[Scenario:InterestingPost] Failed to gather context")
             return None
 
         logger.debug(f"[Scenario:InterestingPost] Context: post_id={context.post_id}, person_tier={context.person.tier if context.person else 'N/A'}")
-        
-        decision = self._judge(context)
-        logger.info(f"[Scenario:InterestingPost] Judge decision: action={decision.get('action')}, confidence={decision.get('confidence')}, reason={decision.get('reason')}")
-        
-        result = self._execute_action(context, decision)
-        logger.info(f"[Scenario:InterestingPost] Result: success={result.success if result else False}, action={result.action if result else 'none'}")
+
+        judgment = self._judge(context)
+        logger.info(f"[Scenario:InterestingPost] Judge: like={judgment.like}, repost={judgment.repost}, reply={judgment.reply}")
+
+        result = self._execute_actions(context, judgment)
+        logger.info(f"[Scenario:InterestingPost] Result: success={result.success if result else False}, actions={result.details.get('actions') if result else 'none'}")
 
         if result and result.success:
             self._update_memory(context, result)
@@ -70,83 +71,74 @@ class InterestingPostScenario(BaseScenario):
             extra={'post': data}
         )
 
-    def _judge(self, context: ScenarioContext) -> Dict[str, Any]:
-        """LLM 기반 판단"""
-        result = self.judge.judge(
+    def _judge(self, context: ScenarioContext) -> JudgmentResult:
+        """LLM 기반 판단 - 독립적 액션"""
+        return self.judge.judge(
             post_text=context.post_text or "",
             person=context.person,
             scenario_type='interesting_post',
             extra_context=None
         )
 
-        return {
-            'action': result.action,
-            'reason': result.reason,
-            'reply_type': result.reply_type or 'normal',
-            'confidence': result.confidence
-        }
-
-    def _execute_action(
-        self, context: ScenarioContext, decision: Dict[str, Any]
+    def _execute_actions(
+        self, context: ScenarioContext, judgment: JudgmentResult
     ) -> Optional[ScenarioResult]:
-        """액션 실행"""
-        action = decision.get('action', 'skip')
+        """독립적 액션들 실행"""
         tweet_id = context.post_id
+        actions_taken: List[str] = []
+        reply_content = None
 
-        if action == 'skip':
-            logger.debug(f"[Scenario:InterestingPost] Action: skip")
+        # 아무 액션도 없으면 skip
+        if not judgment.like and not judgment.repost and not judgment.reply:
             return ScenarioResult(success=True, action='skip')
 
-        if action == 'like':
-            logger.info(f"[Scenario:InterestingPost] Action: like tweet_id={tweet_id}")
-            success = twitter_api.like_tweet(tweet_id)
-            logger.info(f"[Scenario:InterestingPost] Like result: {success}")
-            return ScenarioResult(success=success, action='like')
+        # Like 실행
+        if judgment.like:
+            logger.info(f"[Scenario:InterestingPost] Executing: like")
+            if twitter_api.like_tweet(tweet_id):
+                actions_taken.append('like')
 
-        if action == 'repost':
-            logger.info(f"[Scenario:InterestingPost] Action: repost tweet_id={tweet_id}")
-            success = twitter_api.repost_tweet(tweet_id)
-            logger.info(f"[Scenario:InterestingPost] Repost result: {success}")
-            if success:
-                twitter_api.like_tweet(tweet_id)
-            return ScenarioResult(success=success, action='repost')
+        # Repost 실행
+        if judgment.repost:
+            logger.info(f"[Scenario:InterestingPost] Executing: repost")
+            if twitter_api.repost_tweet(tweet_id):
+                actions_taken.append('repost')
 
-        if action == 'reply':
-            logger.info(f"[Scenario:InterestingPost] Action: reply (type={decision.get('reply_type', 'normal')})")
+        # Reply 실행
+        if judgment.reply:
+            logger.info(f"[Scenario:InterestingPost] Executing: reply (type={judgment.reply_type or 'normal'})")
             recent_replies = self.get_recent_replies(limit=5)
             reply_content = self.reply_gen.generate(
                 post_text=context.post_text or "",
                 person=context.person,
-                reply_type=decision.get('reply_type', 'normal'),
+                reply_type=judgment.reply_type or 'normal',
                 recent_replies=recent_replies
             )
 
-            if not reply_content:
-                logger.warning("[Scenario:InterestingPost] Reply generation failed, falling back to like")
-                success = twitter_api.like_tweet(tweet_id)
-                return ScenarioResult(success=success, action='like')
+            if reply_content:
+                result = twitter_api.reply_to_tweet(tweet_id, reply_content)
+                if result is not None:
+                    actions_taken.append('reply')
+            else:
+                logger.warning("[Scenario:InterestingPost] Reply generation failed")
 
-            logger.info(f"[Scenario:InterestingPost] Reply content: {reply_content[:50]}...")
-            result = twitter_api.reply_to_tweet(tweet_id, reply_content)
-            success = result is not None
-            logger.info(f"[Scenario:InterestingPost] Reply result: {success}")
+        # 결과 반환
+        primary_action = 'reply' if 'reply' in actions_taken else ('repost' if 'repost' in actions_taken else ('like' if 'like' in actions_taken else 'skip'))
 
-            if success:
-                twitter_api.like_tweet(tweet_id)
-
-            return ScenarioResult(
-                success=success,
-                action='reply',
-                content=reply_content,
-                details={'reason': decision.get('reason')}
-            )
-
-        return ScenarioResult(success=True, action='skip')
+        return ScenarioResult(
+            success=len(actions_taken) > 0,
+            action=primary_action,
+            content=reply_content,
+            details={'actions': actions_taken, 'reason': judgment.reason}
+        )
 
     def _update_memory(self, context: ScenarioContext, result: ScenarioResult):
         """메모리 업데이트"""
-        if context.person and result.action in ('like', 'reply', 'repost'):
-            self.update_person_after_interaction(
-                context.person,
-                interaction_type=result.action
-            )
+        actions = result.details.get('actions', [])
+        if context.person and actions:
+            for action in actions:
+                if action in ('like', 'reply', 'repost'):
+                    self.update_person_after_interaction(
+                        context.person,
+                        interaction_type=action
+                    )

@@ -1,13 +1,13 @@
 """
 Engagement Judge
-LLM 기반 engagement 판단 (like/reply/skip)
+LLM 기반 engagement 판단 (like/reply/repost - 독립적)
 
 시나리오에서 호출하여 실제 판단 수행
 """
 import json
 import logging
 from typing import Dict, Any, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from core.llm import llm_client
 from agent.memory.database import PersonMemory
@@ -17,11 +17,29 @@ logger = logging.getLogger("agent")
 
 @dataclass
 class JudgmentResult:
-    """판단 결과"""
-    action: str  # 'like', 'reply', 'repost', 'skip'
-    confidence: float  # 0.0 ~ 1.0
-    reason: str
+    """판단 결과 - 각 액션은 독립적"""
+    like: bool = False
+    repost: bool = False
+    reply: bool = False
     reply_type: Optional[str] = None  # 'short', 'normal', 'long'
+    confidence: float = 0.5
+    reason: str = ""
+
+    @property
+    def action(self) -> str:
+        """하위 호환: 주요 액션 반환"""
+        if self.reply:
+            return 'reply'
+        if self.repost:
+            return 'repost'
+        if self.like:
+            return 'like'
+        return 'skip'
+
+    @property
+    def actions(self) -> Dict[str, bool]:
+        """독립적 액션 dict"""
+        return {'like': self.like, 'repost': self.repost, 'reply': self.reply}
 
 
 class EngagementJudge:
@@ -29,20 +47,24 @@ class EngagementJudge:
     LLM 기반 engagement 판단
 
     입력: 포스트 정보 + PersonMemory + 상황 컨텍스트
-    출력: 어떤 액션을 취할지 결정
+    출력: 독립적인 액션 결정 (like, repost, reply 각각 true/false)
     """
 
     SYSTEM_PROMPT = """당신은 소셜 미디어 사용자입니다.
 주어진 포스트와 상황을 보고 어떻게 반응할지 결정하세요.
 
+각 액션은 독립적입니다 (여러 개 동시 선택 가능):
+- like: 좋아요 (공감하면)
+- repost: 리포스트 (공유하고 싶으면)
+- reply: 답글 (할 말이 있으면)
+
 판단 기준:
 1. 관계: 아는 사람이면 더 적극적으로 반응
-2. 내용: 질문이면 답변, 공감가면 좋아요, 공유하고 싶으면 리포스트
+2. 내용: 공감가면 like, 공유할 가치 있으면 repost, 할 말 있으면 reply
 3. 컨텍스트: 내 글에 대한 반응이면 더 신경 써서 대응
-4. 리포스트: 정말 좋은 정보거나 팔로워들에게 공유하고 싶을 때 (빈도 낮게)
 
 반드시 아래 JSON 형식으로만 응답하세요:
-{"action": "like|reply|repost|skip", "confidence": 0.0-1.0, "reason": "짧은 이유", "reply_type": "short|normal|long 또는 null"}"""
+{"like": true/false, "repost": true/false, "reply": true/false, "reply_type": "short|normal|long 또는 null", "reason": "짧은 이유"}"""
 
     def judge(
         self,
@@ -62,7 +84,7 @@ class EngagementJudge:
         """
         logger.debug(f"[Judge] Judging: scenario={scenario_type}, person={person.screen_name if person else 'N/A'}")
         logger.debug(f"[Judge] Post text: {post_text[:80]}...")
-        
+
         prompt = self._build_prompt(post_text, person, scenario_type, extra_context)
 
         try:
@@ -70,15 +92,11 @@ class EngagementJudge:
             response = llm_client.generate(prompt, system_prompt=self.SYSTEM_PROMPT)
             logger.debug(f"[Judge] LLM response: {response[:100]}...")
             result = self._parse_response(response)
-            logger.info(f"[Judge] Result: action={result.action}, confidence={result.confidence:.2f}")
+            logger.info(f"[Judge] Result: like={result.like}, repost={result.repost}, reply={result.reply}")
             return result
         except Exception as e:
             logger.error(f"[Judge] LLM failed: {e}")
-            return JudgmentResult(
-                action='skip',
-                confidence=0.0,
-                reason=f'LLM error: {e}'
-            )
+            return JudgmentResult(reason=f'LLM error: {e}')
 
     def _build_prompt(
         self,
@@ -111,7 +129,6 @@ class EngagementJudge:
     def _parse_response(self, response: str) -> JudgmentResult:
         """LLM 응답 파싱"""
         try:
-            # JSON 추출 시도
             start = response.find('{')
             end = response.rfind('}') + 1
             if start >= 0 and end > start:
@@ -119,18 +136,23 @@ class EngagementJudge:
                 data = json.loads(json_str)
 
                 return JudgmentResult(
-                    action=data.get('action', 'skip'),
-                    confidence=float(data.get('confidence', 0.5)),
-                    reason=data.get('reason', ''),
-                    reply_type=data.get('reply_type')
+                    like=bool(data.get('like', False)),
+                    repost=bool(data.get('repost', False)),
+                    reply=bool(data.get('reply', False)),
+                    reply_type=data.get('reply_type'),
+                    confidence=float(data.get('confidence', 0.7)),
+                    reason=data.get('reason', '')
                 )
         except json.JSONDecodeError:
             pass
 
-        # 파싱 실패 시 기본값
-        if 'reply' in response.lower():
-            return JudgmentResult(action='reply', confidence=0.5, reason='parsed from text')
+        # 파싱 실패 시 텍스트 기반 추론
+        result = JudgmentResult(reason='parsed from text')
         if 'like' in response.lower():
-            return JudgmentResult(action='like', confidence=0.5, reason='parsed from text')
+            result.like = True
+        if 'repost' in response.lower() or 'retweet' in response.lower():
+            result.repost = True
+        if 'reply' in response.lower():
+            result.reply = True
 
-        return JudgmentResult(action='skip', confidence=0.3, reason='parse failed')
+        return result
