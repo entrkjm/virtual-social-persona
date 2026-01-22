@@ -220,7 +220,10 @@ class SocialEngine:
             browse_count = random.randint(browse_range[0], browse_range[1])
             max_reactions = random.randint(react_range[0], react_range[1])
 
-            logger.info(f"[Session #{self.session_count}] Browsing {browse_count} feeds, max {max_reactions} reactions")
+            if is_warmup:
+                logger.info(f"[Session #{self.session_count}] Browsing {browse_count} feeds (warmup, read-only)")
+            else:
+                logger.info(f"[Session #{self.session_count}] Browsing {browse_count} feeds, max {max_reactions} reactions")
 
             try:
                 posts = get_feed_posts()
@@ -229,13 +232,25 @@ class SocialEngine:
 
                 for post in posts_to_browse:
                     result.feeds_browsed += 1
+                    user = post.get('user', 'unknown')
+                    text_preview = (post.get('text', '')[:40] + '...') if post.get('text') else ''
 
-                    if reactions < max_reactions and not is_warmup:
-                        feed_result = self.run_feed_journey([post], process_limit=1)
-                        if feed_result and feed_result.success and feed_result.action_taken:
-                            result.feeds_reacted += 1
-                            result.actions_taken.append(f"feed:{feed_result.action_taken}")
-                            reactions += 1
+                    if is_warmup:
+                        logger.debug(f"[Feed] Browsed @{user}: {text_preview} (warmup, no action)")
+                        continue
+
+                    if reactions >= max_reactions:
+                        logger.debug(f"[Feed] Browsed @{user}: {text_preview} (max reactions reached)")
+                        continue
+
+                    feed_result = self.run_feed_journey([post], process_limit=1)
+                    if feed_result and feed_result.success and feed_result.action_taken:
+                        result.feeds_reacted += 1
+                        result.actions_taken.append(f"feed:{feed_result.action_taken}")
+                        reactions += 1
+                        logger.info(f"[Feed] Reacted @{user}: {feed_result.action_taken}")
+                    else:
+                        logger.debug(f"[Feed] Browsed @{user}: {text_preview} (no action)")
 
                     # 스크롤 딜레이
                     delay = random.uniform(intra_delay[0] * 0.5, intra_delay[1] * 0.5)
