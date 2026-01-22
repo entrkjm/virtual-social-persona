@@ -30,7 +30,7 @@ session:
   intra_delay: [2, 8]
 
   # 워밍업 (첫 N 세션은 읽기만)
-  warmup_sessions: 2
+  warmup_sessions: 0
 
 # ===== Level 3: Human-like 타이밍 =====
 human_like:
