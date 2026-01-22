@@ -607,6 +607,34 @@ def check_is_following(user_id: str) -> bool:
         return False
 
 
+async def _get_following_list_twikit(screen_name: str, count: int = 50) -> List[dict]:
+    """팔로잉 목록 가져오기"""
+    async def _do():
+        client = await _get_twikit_client()
+        user = await client.get_user_by_screen_name(screen_name)
+        following = await user.get_following(count=count)
+
+        result = []
+        for f in following:
+            result.append({
+                'user_id': f.id,
+                'screen_name': f.screen_name,
+                'name': f.name,
+                'bio': f.description or ''
+            })
+        return result
+    return await _with_retry(_do)
+
+
+def get_following_list(screen_name: str, count: int = 50) -> List[dict]:
+    """팔로잉 목록 가져오기"""
+    try:
+        return _run_async(_get_following_list_twikit(screen_name, count))
+    except Exception as e:
+        logger.error(f"[FOLLOWING] failed: {e}")
+        return []
+
+
 async def _get_my_tweets_twikit(screen_name: str, count: int = 50) -> List[dict]:
     """내 트윗 가져오기"""
     async def _do():
@@ -638,6 +666,49 @@ def get_my_tweets(screen_name: str, count: int = 50) -> List[dict]:
     except Exception as e:
         logger.error(f"[MY_TWEETS] failed: {e}")
         return []
+
+
+async def _get_user_tweets_twikit(user_id: str = None, screen_name: str = None, count: int = 10) -> List[dict]:
+    """특정 유저 트윗 가져오기 (프로필 방문용)"""
+    async def _do():
+        client = await _get_twikit_client()
+        if user_id:
+            user = await client.get_user_by_id(user_id)
+        elif screen_name:
+            user = await client.get_user_by_screen_name(screen_name)
+        else:
+            raise ValueError("user_id or screen_name required")
+
+        tweets = await user.get_tweets('Tweets', count=count)
+
+        result = []
+        for tweet in tweets:
+            text = tweet.text or tweet.full_text or ""
+            if text.startswith("RT @"):
+                continue
+            result.append({
+                "id": tweet.id,
+                "user_id": user.id,
+                "user": user.screen_name,
+                "text": text,
+                "created_at": str(tweet.created_at) if tweet.created_at else None,
+                "engagement": {
+                    "favorite_count": getattr(tweet, 'favorite_count', 0) or 0,
+                    "retweet_count": getattr(tweet, 'retweet_count', 0) or 0
+                }
+            })
+        return result
+    return await _with_retry(_do)
+
+
+def get_user_tweets(user_id: str = None, screen_name: str = None, count: int = 10) -> List[dict]:
+    """특정 유저 트윗 가져오기"""
+    try:
+        return _run_async(_get_user_tweets_twikit(user_id, screen_name, count))
+    except Exception as e:
+        logger.error(f"[USER_TWEETS] failed: {e}")
+        return []
+
 
 async def _get_trends_twikit(woeid: int = 23424868):
     async def _do():

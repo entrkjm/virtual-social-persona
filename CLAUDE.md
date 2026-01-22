@@ -17,8 +17,10 @@ Mode Selection (activity.yaml 가중치):
 ├─ Social (97%) → SocialEngine.session()
 │   ├─ Phase 1: 알림 배치 처리 (3-8개)
 │   │   └─ ReceivedComment/Mentioned/Quoted/NewFollower Scenario
-│   └─ Phase 2: 피드 배치 탐색 (5-15개 확인, 1-3개 반응)
-│       └─ FamiliarPerson/InterestingPost Scenario
+│   ├─ Phase 2: 피드 배치 탐색 (5-15개 확인, 1-3개 반응)
+│   │   └─ FamiliarPerson/InterestingPost Scenario
+│   └─ Phase 3: 프로필 방문 (0-2개, 팔로잉 직접 확인)
+│       └─ ProfileVisitJourney → FamiliarPerson/InterestingPost
 ├─ Casual (2%) → Trigger Engine + Post Generator
 └─ Series (1%) → Planner → Writer → Studio → Archiver
 ```
@@ -29,9 +31,9 @@ Mode Selection (activity.yaml 가중치):
 
 ```
 Session Start
-├── 알림 처리 (3-8개, intra_delay 2-8초)
-├── 피드 탐색 (5-15개 확인, 1-3개 반응)
-├── (선택) 독립 포스팅
+├── Phase 1: 알림 처리 (3-8개, intra_delay 2-8초)
+├── Phase 2: 피드 탐색 (5-15개 확인, 1-3개 반응)
+├── Phase 3: 프로필 방문 (0-2개, 팔로잉 직접 확인)
 Session End → 휴식 30분-2시간 → 다음 Session
 ```
 
@@ -68,6 +70,11 @@ Phase 2: 피드 배치 (5-15개 확인, 1-3개 반응)
 │   ├─ FamiliarPersonScenario (아는 사람 글)
 │   └─ InterestingPostScenario (관심 키워드 매칭)
 └─ 스크롤 딜레이 (1-4초)
+    ↓
+Phase 3: 프로필 방문 (0-2개)
+├─ 팔로잉 목록에서 대상 선택 (familiar_first 또는 random)
+├─ 대상 프로필의 최근 글 가져오기
+└─ FamiliarPerson/InterestingPost 시나리오로 상호작용
 ```
 
 | 컴포넌트 | 위치 | 역할 |
@@ -75,6 +82,7 @@ Phase 2: 피드 배치 (5-15개 확인, 1-3개 반응)
 | SocialEngineV2 | `modes/social/engine.py` | 통합 진입점, Journey 오케스트레이션 |
 | NotificationJourney | `modes/social/journeys/notification.py` | 알림 기반 시나리오 선택 |
 | FeedJourney | `modes/social/journeys/feed.py` | 피드 분류 + 우선순위 선택 |
+| ProfileVisitJourney | `modes/social/journeys/profile_visit.py` | 팔로잉 프로필 방문 + 상호작용 |
 | EngagementJudge | `modes/social/judgment/engagement_judge.py` | LLM 기반 행동 판단 |
 | ReplyGenerator | `modes/social/judgment/reply_generator.py` | 답글 생성 |
 | PersonMemory | `agent/memory/database.py` | 사람 기억 (tier/affinity 기반) |

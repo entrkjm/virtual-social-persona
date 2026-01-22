@@ -16,6 +16,7 @@ from agent.memory.factory import MemoryFactory
 
 from .journeys.notification import NotificationJourney
 from .journeys.feed import FeedJourney
+from .journeys.profile_visit import ProfileVisitJourney
 from .journeys.base import JourneyResult
 
 
@@ -25,6 +26,7 @@ class SessionResult:
     notifications_processed: int = 0
     feeds_browsed: int = 0
     feeds_reacted: int = 0
+    profiles_visited: int = 0
     actions_taken: List[str] = field(default_factory=list)
     duration_seconds: float = 0.0
 
@@ -83,6 +85,16 @@ class SocialEngine:
             persona_config,
             feed_selection=feed_selection
         )
+
+        # Profile Visit Journey
+        visit_cfg = self.session_config.get('profile_visit', {})
+        self.profile_visit_journey = ProfileVisitJourney(
+            self.memory_db,
+            platform,
+            persona_config,
+            visit_config=visit_cfg
+        )
+        self.profile_visit_enabled = visit_cfg.get('enabled', False)
 
     def _extract_core_interests(self) -> List[str]:
         """페르소나 설정에서 관심 키워드 추출"""
@@ -156,13 +168,17 @@ class SocialEngine:
     async def session(
         self,
         get_feed_posts: Optional[Callable[[], List[Dict[str, Any]]]] = None,
+        get_following_list: Optional[Callable[[], List[Dict[str, Any]]]] = None,
+        get_user_tweets_fn: Optional[Callable] = None,
         delay_fn: Optional[Callable[[float], None]] = None
     ) -> SessionResult:
         """
-        세션 실행 - 알림 배치 처리 → 피드 배치 탐색 → 휴식
+        세션 실행 - 알림 처리 → 피드 탐색 → 프로필 방문 → 휴식
 
         Args:
             get_feed_posts: 피드 포스트 가져오는 함수 (없으면 피드 스킵)
+            get_following_list: 팔로잉 목록 가져오는 함수 (없으면 프로필 방문 스킵)
+            get_user_tweets_fn: 유저 트윗 가져오는 함수 (profile visit용)
             delay_fn: 딜레이 함수 (테스트용 오버라이드 가능)
         """
         start_time = time.time()
@@ -299,12 +315,53 @@ class SocialEngine:
                     raise
                 logger.warning(f"[Session] Feed error: {e}")
 
+        # === Phase 3: 프로필 방문 ===
+        if self.profile_visit_enabled and get_following_list and get_user_tweets_fn and not is_warmup:
+            visit_cfg = self.session_config.get('profile_visit', {})
+            visit_count_range = visit_cfg.get('count', [0, 2])
+            visit_count = random.randint(visit_count_range[0], visit_count_range[1])
+
+            if visit_count > 0:
+                logger.info(f"[Session #{self.session_count}] Visiting {visit_count} profiles")
+
+                try:
+                    following_list = get_following_list()
+                    if following_list:
+                        for _ in range(visit_count):
+                            # 탭 전환 딜레이
+                            switch_delay = transitions_cfg.get('switch_tab', [2.0, 5.0])
+                            await do_delay(random.uniform(switch_delay[0], switch_delay[1]))
+
+                            visit_result = self.profile_visit_journey.run(
+                                following_list=following_list,
+                                get_user_tweets_fn=get_user_tweets_fn,
+                                process_limit=1
+                            )
+
+                            if visit_result:
+                                result.profiles_visited += 1
+                                if visit_result.action_taken:
+                                    result.actions_taken.append(f"visit:{visit_result.action_taken}")
+                                    logger.info(f"[ProfileVisit] @{visit_result.target_user}: {visit_result.action_taken}")
+                                else:
+                                    logger.info(f"[ProfileVisit] @{visit_result.target_user}: no action")
+
+                            # 프로필 간 딜레이
+                            await do_delay(random.uniform(intra_delay[0], intra_delay[1]))
+
+                except Exception as e:
+                    error_str = str(e).lower()
+                    if any(code in error_str for code in ['226', '401', '403', 'authorization']):
+                        raise
+                    logger.warning(f"[Session] Profile visit error: {e}")
+
         result.duration_seconds = time.time() - start_time
         logger.info(
             f"[Session #{self.session_count}] Done: "
             f"{result.notifications_processed} notifs, "
             f"{result.feeds_browsed} browsed, "
             f"{result.feeds_reacted} reacted, "
+            f"{result.profiles_visited} visited, "
             f"{result.total_actions} actions in {result.duration_seconds:.1f}s"
         )
 

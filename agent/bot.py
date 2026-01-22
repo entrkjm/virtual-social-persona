@@ -1132,12 +1132,13 @@ class SocialAgent:
 
     async def run_social_session(self):
         """
-        Social Mode 세션 실행 - 알림/피드 배치 처리
+        Social Mode 세션 실행 - 알림/피드/프로필방문 배치 처리
 
         Returns:
             SessionResult from SocialEngine
         """
         from agent.platforms.twitter.modes.social.engine import SessionResult
+        import os
 
         if not self.social_engine:
             logger.error("[Social] Engine not initialized")
@@ -1149,8 +1150,20 @@ class SocialAgent:
             def get_feed_posts():
                 return self._fetch_posts_for_feed()
 
+            my_username = os.getenv("TWITTER_USERNAME")
+
+            def get_following_list():
+                if not my_username:
+                    return []
+                return twitter_api.get_following_list(my_username, count=50)
+
+            def get_user_tweets_fn(user_id=None, screen_name=None, count=5):
+                return twitter_api.get_user_tweets(user_id=user_id, screen_name=screen_name, count=count)
+
             result = await self.social_engine.session(
-                get_feed_posts=get_feed_posts
+                get_feed_posts=get_feed_posts,
+                get_following_list=get_following_list,
+                get_user_tweets_fn=get_user_tweets_fn
             )
 
             # 액션 기록
