@@ -3,16 +3,22 @@ Engagement Judge
 LLM 기반 engagement 판단 (like/reply/repost - 독립적)
 
 시나리오에서 호출하여 실제 판단 수행
++ content_filter.yaml의 llm_hints 지원
 """
 import json
 import logging
+from pathlib import Path
 from typing import Dict, Any, Optional
 from dataclasses import dataclass, field
 
+import yaml
 from core.llm import llm_client
 from agent.memory.database import PersonMemory
 
 logger = logging.getLogger("agent")
+
+# 싱글톤 캐시
+_content_filter_cache: Dict[str, Dict] = {}
 
 
 @dataclass
@@ -64,8 +70,48 @@ class EngagementJudge:
 3. 컨텍스트: 내 글에 대한 반응이면 더 신경 써서 대응
 4. 기존 답글: 이미 비슷한 답글이 달려있으면 reply 안 함
 
+중요: 내용을 정확히 이해할 수 없으면 모든 액션 false로 skip
+- 외국어나 전문용어가 많아서 맥락 파악이 안 되면 skip
+- 추측으로 반응하지 말 것
+
 반드시 아래 JSON 형식으로만 응답하세요:
 {"like": true/false, "repost": true/false, "reply": true/false, "reply_type": "short|normal|long 또는 null", "reason": "짧은 이유"}"""
+
+    def __init__(self, persona_id: Optional[str] = None):
+        """
+        Args:
+            persona_id: 페르소나 ID (content_filter.yaml 로드용)
+        """
+        self.persona_id = persona_id
+        self.llm_hints = self._load_llm_hints()
+
+    def _load_llm_hints(self) -> str:
+        """content_filter.yaml에서 engagement_judge 힌트 로드"""
+        if not self.persona_id:
+            return ""
+
+        if self.persona_id in _content_filter_cache:
+            config = _content_filter_cache[self.persona_id]
+        else:
+            config_path = Path(f"personas/{self.persona_id}/platforms/twitter/content_filter.yaml")
+            if config_path.exists():
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config = yaml.safe_load(f) or {}
+            else:
+                config = {}
+            _content_filter_cache[self.persona_id] = config
+
+        return config.get('llm_hints', {}).get('engagement_judge', '')
+
+    def _get_system_prompt(self) -> str:
+        """시스템 프롬프트 생성 (llm_hints 포함)"""
+        base_prompt = self.SYSTEM_PROMPT
+        if self.llm_hints:
+            # JSON 형식 앞에 힌트 삽입
+            insert_point = base_prompt.rfind("반드시 아래 JSON")
+            if insert_point > 0:
+                return base_prompt[:insert_point] + self.llm_hints + "\n\n" + base_prompt[insert_point:]
+        return base_prompt
 
     def judge(
         self,
@@ -90,7 +136,7 @@ class EngagementJudge:
 
         try:
             logger.debug("[Judge] Calling LLM...")
-            response = llm_client.generate(prompt, system_prompt=self.SYSTEM_PROMPT)
+            response = llm_client.generate(prompt, system_prompt=self._get_system_prompt())
             logger.debug(f"[Judge] LLM response: {response[:100]}...")
             result = self._parse_response(response)
             logger.info(f"[Judge] Result: like={result.like}, repost={result.repost}, reply={result.reply}")

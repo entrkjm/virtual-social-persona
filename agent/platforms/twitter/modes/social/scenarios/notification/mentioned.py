@@ -28,7 +28,8 @@ class MentionedScenario(BaseScenario):
 
     def __init__(self, memory_db: MemoryDatabase, platform: str = 'twitter', persona_config: Optional[Dict] = None):
         super().__init__(memory_db, platform)
-        self.judge = EngagementJudge()
+        persona_id = persona_config.get('persona_id') if persona_config else None
+        self.judge = EngagementJudge(persona_id=persona_id)
         self.reply_gen = ReplyGenerator(persona_config)
 
     def execute(self, data: NotificationData) -> Optional[ScenarioResult]:

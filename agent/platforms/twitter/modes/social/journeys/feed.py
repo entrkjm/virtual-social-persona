@@ -70,7 +70,11 @@ class FeedJourney(BaseJourney):
         personality = identity.get('personality', {})
         persona_brief = personality.get('brief', occupation) if personality else occupation
         language_filter = self.feed_selection.get('language_filter')
-        self.feed_filter = FeedFilter(persona_brief, self.core_interests, language_filter)
+        # persona_id 전달 (content_filter.yaml 로드용)
+        persona_id = self.persona_config.get('persona_id')
+        self.feed_filter = FeedFilter(
+            persona_brief, self.core_interests, language_filter, persona_id=persona_id
+        )
 
         self._init_scenarios()
 

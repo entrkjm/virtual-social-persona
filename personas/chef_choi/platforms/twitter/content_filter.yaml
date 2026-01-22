@@ -1,0 +1,38 @@
+# Content Filter Configuration
+# 이해 불가능한 포스트 필터링 규칙
+# 페르소나별로 다른 설정 가능 (한국어/영어 페르소나)
+
+enabled: true
+
+# Rule-based pre-filter (LLM 호출 전)
+pre_filter:
+  # 최소 텍스트 길이 (이모지/공백 제외)
+  min_text_length: 10
+
+  # 최소 이해 가능 문자 비율 (한글 + 영문 + 숫자)
+  min_readable_ratio: 0.3
+
+  # 이모지만 있는 포스트 스킵
+  skip_emoji_only: true
+
+  # 지원 언어 (이 언어들이 주요 콘텐츠일 때만 처리)
+  supported_languages:
+    - ko  # 한국어
+    - en  # 영어
+
+  # 특정 패턴 스킵 (정규식)
+  skip_patterns:
+    - "^RT @"  # 리트윗
+    - "^\\d+$"  # 숫자만
+
+# LLM 레이어 힌트 (프롬프트에 추가)
+llm_hints:
+  # FeedFilter에 추가할 지시
+  feed_filter: |
+    - 이해할 수 없는 언어나 맥락의 포스트는 fail 처리
+    - 외국어 비율이 높아서 의미 파악이 어려우면 fail
+
+  # EngagementJudge에 추가할 지시
+  engagement_judge: |
+    - 내용을 정확히 이해할 수 없으면 모든 행동 skip
+    - 추측으로 반응하지 말 것
