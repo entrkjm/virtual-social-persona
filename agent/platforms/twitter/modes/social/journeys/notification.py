@@ -4,12 +4,15 @@ Notification Journey
 
 Entry point for notification-centric social mode
 """
+import logging
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass
 
 from .base import BaseJourney, JourneyResult
 from agent.memory.database import MemoryDatabase
 from agent.platforms.twitter.api.social import get_all_notifications, NotificationData
+
+logger = logging.getLogger("agent")
 
 from ..scenarios.notification.received_comment import ReceivedCommentScenario
 from ..scenarios.notification.mentioned import MentionedScenario
@@ -69,13 +72,20 @@ class NotificationJourney(BaseJourney):
         """
         notifications = get_all_notifications(count=count)
         if not notifications:
+            logger.info("[Notification] No notifications fetched")
             return None
+
+        logger.info(f"[Notification] Fetched {len(notifications)} notifications")
 
         classified = self._classify_and_prioritize(notifications)
         if not classified:
+            logger.info("[Notification] No actionable notifications (all filtered)")
             return None
 
+        logger.info(f"[Notification] {len(classified)} actionable: {[n.scenario_type for n in classified[:5]]}")
+
         for notif in classified[:process_limit]:
+            logger.info(f"[Notification] Processing: {notif.scenario_type} from @{notif.raw.get('from_user')}")
             result = self._process_notification(notif)
             if result and result.success:
                 return result
@@ -87,9 +97,11 @@ class NotificationJourney(BaseJourney):
     ) -> List[ProcessedNotification]:
         """알림 분류 + 우선순위 정렬"""
         processed = []
+        type_counts = {}
 
         for notif in notifications:
             notif_type = notif.get('type', 'unknown')
+            type_counts[notif_type] = type_counts.get(notif_type, 0) + 1
             priority = self.SCENARIO_PRIORITY.get(notif_type, 99)
 
             # 처리 가능한 시나리오만 포함
@@ -100,6 +112,7 @@ class NotificationJourney(BaseJourney):
                     priority=priority
                 ))
 
+        logger.debug(f"[Notification] Type breakdown: {type_counts}")
         processed.sort(key=lambda x: x.priority)
         return processed
 
@@ -119,5 +132,9 @@ class NotificationJourney(BaseJourney):
                 details=result.details if result else None
             )
         except Exception as e:
+            error_str = str(e).lower()
+            # 226/401/403/authorization 에러는 상위로 전파 (쿨다운 처리 필요)
+            if any(code in error_str for code in ['226', '401', '403', 'authorization', 'automated']):
+                raise
             print(f"[NotificationJourney] Scenario {notif.scenario_type} failed: {e}")
             return None

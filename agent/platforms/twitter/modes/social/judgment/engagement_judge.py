@@ -5,11 +5,14 @@ LLM 기반 engagement 판단 (like/reply/skip)
 시나리오에서 호출하여 실제 판단 수행
 """
 import json
+import logging
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
 
 from core.llm import llm_client
 from agent.memory.database import PersonMemory
+
+logger = logging.getLogger("agent")
 
 
 @dataclass
@@ -56,13 +59,20 @@ class EngagementJudge:
             scenario_type: 시나리오 타입 (notification/feed)
             extra_context: 추가 컨텍스트
         """
+        logger.debug(f"[Judge] Judging: scenario={scenario_type}, person={person.screen_name if person else 'N/A'}")
+        logger.debug(f"[Judge] Post text: {post_text[:80]}...")
+        
         prompt = self._build_prompt(post_text, person, scenario_type, extra_context)
 
         try:
+            logger.debug("[Judge] Calling LLM...")
             response = llm_client.generate(prompt, system_prompt=self.SYSTEM_PROMPT)
-            return self._parse_response(response)
+            logger.debug(f"[Judge] LLM response: {response[:100]}...")
+            result = self._parse_response(response)
+            logger.info(f"[Judge] Result: action={result.action}, confidence={result.confidence:.2f}")
+            return result
         except Exception as e:
-            print(f"[EngagementJudge] LLM failed: {e}")
+            logger.error(f"[Judge] LLM failed: {e}")
             return JudgmentResult(
                 action='skip',
                 confidence=0.0,

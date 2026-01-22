@@ -1,12 +1,6 @@
 # Twitter-Specific Behavior Settings
 # 플랫폼별 행동 비율 및 제약사항
-
-# 행동 선택 비율 (Twitter)
-# Core behavior의 multiplier로 작용
-action_ratios:
-  like: 1.0
-  repost: 0.8
-  comment: 0.6
+# NOTE: action_ratios는 identity.yaml의 behavior.probability_model.action_ratios에서 관리
 
 # 팔로우 행동 설정 (Twitter)
 follow_behavior:

@@ -205,18 +205,34 @@ def run_standalone():
                         time.sleep(break_duration)
                         continue
 
+                # Mode Selection: activity.yaml의 mode_weights 기반
+                activity_cfg = persona.platform_configs.get('twitter', {}).get('activity', {})
+                mode_weights = activity_cfg.get('mode_weights', {'social': 0.97, 'casual': 0.02, 'series': 0.01})
+                
                 roll = random.random()
-                step_probs = mode_manager.get_step_probabilities(persona.behavior)
+                cumulative = 0
+                selected_mode = 'social'
+                for mode, weight in mode_weights.items():
+                    cumulative += weight
+                    if roll < cumulative:
+                        selected_mode = mode
+                        break
 
-                if roll < step_probs['scout']:
-                    action_name = "scout_timeline"
-                    status, message, data = social_agent.scout_and_respond()
-                elif roll < step_probs['scout'] + step_probs['mentions']:
-                    action_name = "check_mentions"
-                    status, message, data = social_agent.check_mentions()
-                else:
-                    action_name = "post_tweet"
+                logger.info(f"[STEP {step_count}] Mode: {selected_mode} (roll={roll:.2f})")
+
+                # Mode별 분기
+                if selected_mode == 'social':
+                    action_name = "social"
+                    status, message, data = social_agent.run_social_step()
+                elif selected_mode == 'casual':
+                    action_name = "casual"
                     status, message, data = social_agent.post_tweet_executable(content="")
+                elif selected_mode == 'series':
+                    action_name = "series"
+                    status, message, data = social_agent.run_series_step()
+                else:
+                    action_name = "social"
+                    status, message, data = social_agent.run_social_step()
 
 
                 logger.info(f"[STEP {step_count}] {action_name}: {message}")

@@ -7,6 +7,7 @@ import asyncio
 from typing import TypedDict, Optional, List
 from twikit import Client
 from config.settings import settings
+from agent.core.logger import logger
 
 
 def _run_async(coro):
@@ -95,7 +96,9 @@ async def _get_twikit_client() -> Client:
         try:
             current_mtime = os.path.getmtime(cookies_file)
             if current_mtime > _last_cookie_mtime:
-                print(f"[TWITTER] 🍪 쿠키 파일 변경 감지! ({_last_cookie_mtime} -> {current_mtime})")
+                logger.info(
+                    f"[TWITTER] 🍪 쿠키 파일 변경 감지! ({_last_cookie_mtime} -> {current_mtime})"
+                )
                 should_reload = True
                 _last_cookie_mtime = current_mtime
         except OSError:
@@ -103,16 +106,18 @@ async def _get_twikit_client() -> Client:
 
     # 2. 클라이언트 초기화 또는 리로드
     if _client_instance is None or should_reload:
-        print(f"[TWITTER] 🔄 클라이언트 초기화 중... (Path: {os.path.basename(cookies_file)})")
+        logger.info(
+            f"[TWITTER] 🔄 클라이언트 초기화 중... (Path: {os.path.basename(cookies_file)})"
+        )
         client = Client('en-US')
         
         # 쿠키 로드 시도
         if os.path.exists(cookies_file):
             try:
                 client.load_cookies(cookies_file)
-                print(f"[TWITTER] ✅ 쿠키 로드 완료")
+                logger.info("[TWITTER] ✅ 쿠키 로드 완료")
             except Exception as e:
-                print(f"[TWITTER] ❌ 쿠키 로드 실패: {e}")
+                logger.warning(f"[TWITTER] ❌ 쿠키 로드 실패: {e}")
         
         # 환경변수 폴백 (파일 없을 때만)
         elif os.getenv("TWITTER_AUTH_TOKEN") and os.getenv("TWITTER_CT0"):
@@ -120,12 +125,22 @@ async def _get_twikit_client() -> Client:
                  "auth_token": os.getenv("TWITTER_AUTH_TOKEN"),
                  "ct0": os.getenv("TWITTER_CT0")
              })
-             print("[TWITTER] ✅ 환경변수 쿠키 사용")
+             logger.info("[TWITTER] ✅ 환경변수 쿠키 사용")
         
         _client_instance = client
         _current_cookie_path = cookies_file
 
     return _client_instance
+
+
+def ensure_client() -> bool:
+    """클라이언트 초기화 보장 (로그 순서 정렬용)"""
+    try:
+        _run_async(_get_twikit_client())
+        return True
+    except Exception as e:
+        logger.error(f"[TWITTER] 클라이언트 초기화 실패: {e}")
+        return False
 
 async def _login_and_save(client: Client):
     """(Deprecated in Hot Reload Mode) 로그인 후 쿠키 저장"""
@@ -135,14 +150,14 @@ async def _login_and_save(client: Client):
     password = os.getenv("TWITTER_PASSWORD")
 
     if username and password:
-        print("[TWITTER] 로그인 시도 (Deprecated)...")
+        logger.warning("[TWITTER] 로그인 시도 (Deprecated)...")
         await client.login(auth_info_1=username, auth_info_2=email, password=password)
         cookies_file = _get_cookies_path()
         os.makedirs(os.path.dirname(cookies_file), exist_ok=True)
         client.save_cookies(cookies_file)
-        print(f"[TWITTER] 로그인 성공, 쿠키 저장: {cookies_file}")
+        logger.info(f"[TWITTER] 로그인 성공, 쿠키 저장: {cookies_file}")
     else:
-        print("[TWITTER] 경고: 로그인 정보 없음, 쿠키 파일에 의존합니다.")
+        logger.warning("[TWITTER] 경고: 로그인 정보 없음, 쿠키 파일에 의존합니다.")
 
 
 
@@ -157,11 +172,11 @@ async def _with_retry(func, *args, **kwargs):
     try:
         return await asyncio.wait_for(func(*args, **kwargs), timeout=15.0)
     except asyncio.TimeoutError:
-        print(f"[TWITTER] Timeout (15s)")
+        logger.warning("[TWITTER] Timeout (15s)")
         raise
     except Exception as e:
         if _is_session_expired(e):
-            print(f"[TWITTER] 세션 만료 감지, 재로그인...")
+            logger.warning("[TWITTER] 세션 만료 감지, 재로그인...")
             cookies_file = _get_cookies_path()
             if os.path.exists(cookies_file):
                 os.remove(cookies_file)
@@ -174,7 +189,7 @@ async def _upload_media_twikit(client: Client, media_files: List[str]) -> List[s
     media_ids = []
     for filename in media_files:
         if not os.path.exists(filename):
-            print(f"[TWITTER] Media file not found: {filename}")
+            logger.warning(f"[TWITTER] Media file not found: {filename}")
             continue
         try:
             # upload_media returns a Media object or ID depending on version/endpoint
@@ -188,13 +203,13 @@ async def _upload_media_twikit(client: Client, media_files: List[str]) -> List[s
             elif isinstance(media, (int, str)):
                 media_id = str(media)
             else:
-                print(f"[TWITTER] Unknown media response type: {type(media)}")
+                logger.warning(f"[TWITTER] Unknown media response type: {type(media)}")
                 continue
                 
             if media_id:
                 media_ids.append(media_id)
         except Exception as e:
-            print(f"[TWITTER] Failed to upload media {filename}: {e}")
+            logger.error(f"[TWITTER] Failed to upload media {filename}: {e}")
             import traceback
             traceback.print_exc()
     return media_ids
@@ -265,10 +280,10 @@ def post_tweet(content: str, reply_to: str = None, media_files: List[str] = None
         content = content[:target_chars] + "..."
     try:
         tweet_id = _run_async(_post_tweet_twikit(content, reply_to, media_files))
-        print(f"[TWEET] posted {tweet_id}")
+        logger.info(f"[TWEET] posted {tweet_id}")
         return str(tweet_id)
     except Exception as e:
-        print(f"[TWEET] failed: {e}")
+        logger.error(f"[TWEET] failed: {e}")
         _log_to_file("Twitter (Failed)", content)
         raise
 
@@ -286,7 +301,7 @@ def search_tweets(query: str, count: int = 5):
     try:
         return _run_async(_search_tweets_twikit(query, count))
     except Exception as e:
-        print(f"[SEARCH] 1st attempt failed: {e}")
+        logger.warning(f"[SEARCH] 1st attempt failed: {e}")
     
     # 2차 시도: filter 제거
     import random
@@ -298,19 +313,19 @@ def search_tweets(query: str, count: int = 5):
     
     if simplified_query != query:
         try:
-            print(f"[SEARCH] Retry with simplified: {simplified_query[:50]}...")
+            logger.info(f"[SEARCH] Retry with simplified: {simplified_query[:50]}...")
             return _run_async(_search_tweets_twikit(simplified_query, count))
         except Exception as e:
-            print(f"[SEARCH] 2nd attempt failed: {e}")
+            logger.warning(f"[SEARCH] 2nd attempt failed: {e}")
     
     # 3차 시도: 키워드만 (exclusions 제거)
     time.sleep(random.uniform(2, 5))
     keywords_only = simplified_query.split()[0] if simplified_query else query.split()[0]
     try:
-        print(f"[SEARCH] Retry with keyword only: {keywords_only}")
+        logger.info(f"[SEARCH] Retry with keyword only: {keywords_only}")
         return _run_async(_search_tweets_twikit(keywords_only, count))
     except Exception as e:
-        print(f"[SEARCH] final attempt failed: {e}")
+        logger.error(f"[SEARCH] final attempt failed: {e}")
         return []
 
 
@@ -326,10 +341,10 @@ def favorite_tweet(tweet_id: str) -> bool:
     """좋아요 / Like tweet"""
     try:
         _run_async(_favorite_tweet_twikit(tweet_id))
-        print(f"[LIKE] {tweet_id}")
+        logger.info(f"[LIKE] {tweet_id}")
         return True
     except Exception as e:
-        print(f"[LIKE] failed: {e}")
+        logger.error(f"[LIKE] failed: {e}")
         return False
 
 
@@ -350,10 +365,10 @@ def repost_tweet(tweet_id: str) -> bool:
     """리포스트 / Retweet"""
     try:
         _run_async(_repost_tweet_twikit(tweet_id))
-        print(f"[REPOST] {tweet_id}")
+        logger.info(f"[REPOST] {tweet_id}")
         return True
     except Exception as e:
-        print(f"[REPOST] failed: {e}")
+        logger.error(f"[REPOST] failed: {e}")
         return False
 
 
@@ -380,7 +395,7 @@ def get_mentions(count: int = 20):
     try:
         return _run_async(_get_mentions_twikit(count))
     except Exception as e:
-        print(f"[MENTIONS] failed: {e}")
+        logger.error(f"[MENTIONS] failed: {e}")
         return []
 
 
@@ -440,7 +455,7 @@ def get_all_notifications(count: int = 40) -> List[NotificationData]:
     try:
         return _run_async(_get_all_notifications_twikit(count))
     except Exception as e:
-        print(f"[NOTIFICATIONS] failed: {e}")
+        logger.error(f"[NOTIFICATIONS] failed: {e}")
         return []
 
 
@@ -467,13 +482,13 @@ def get_tweet_replies(tweet_id: str):
     try:
         return _run_async(_get_tweet_replies_twikit(tweet_id))
     except Exception as e:
-        print(f"[REPLIES] failed: {e}")
+        logger.error(f"[REPLIES] failed: {e}")
         return []
 
 
 def post_threads(content: str) -> str:
     """Deprecated - Selenium 방식으로 대체됨"""
-    print("[THREADS] deprecated")
+    logger.warning("[THREADS] deprecated")
     _log_to_file("Threads (Deprecated)", content)
     return "deprecated"
 
@@ -486,7 +501,7 @@ def _log_to_file(platform: str, content: str):
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             f.write(f"[{timestamp}] [{platform}]\n{content}\n{'-'*50}\n")
     except Exception as e:
-        print(f"[LOG] failed: {e}")
+        logger.error(f"[LOG] failed: {e}")
 
 
 # === Follow Functions ===
@@ -503,10 +518,10 @@ def follow_user(user_id: str) -> bool:
     """유저 팔로우 / Follow user"""
     try:
         _run_async(_follow_user_twikit(user_id))
-        print(f"[FOLLOW] {user_id}")
+        logger.info(f"[FOLLOW] {user_id}")
         return True
     except Exception as e:
-        print(f"[FOLLOW] failed: {e}")
+        logger.error(f"[FOLLOW] failed: {e}")
         return False
 
 
@@ -542,7 +557,7 @@ def get_user_profile(user_id: str = None, screen_name: str = None) -> dict:
     try:
         return _run_async(_get_user_profile_twikit(user_id, screen_name))
     except Exception as e:
-        print(f"[PROFILE] failed: {e}")
+        logger.error(f"[PROFILE] failed: {e}")
         return {}
 
 
@@ -560,7 +575,7 @@ def check_is_following(user_id: str) -> bool:
     try:
         return _run_async(_check_is_following_twikit(user_id))
     except Exception as e:
-        print(f"[CHECK_FOLLOW] failed: {e}")
+        logger.error(f"[CHECK_FOLLOW] failed: {e}")
         return False
 
 
@@ -593,7 +608,7 @@ def get_my_tweets(screen_name: str, count: int = 50) -> List[dict]:
     try:
         return _run_async(_get_my_tweets_twikit(screen_name, count))
     except Exception as e:
-        print(f"[MY_TWEETS] failed: {e}")
+        logger.error(f"[MY_TWEETS] failed: {e}")
         return []
 
 async def _get_trends_twikit(woeid: int = 23424868):
@@ -615,7 +630,7 @@ def get_trends(woeid: int = 23424868) -> List[str]:
     try:
         return _run_async(_get_trends_twikit(woeid))
     except Exception as e:
-        print(f"[TRENDS] failed: {e}")
+        logger.error(f"[TRENDS] failed: {e}")
         return []
 
 async def _get_new_followers_twikit(screen_name: str, count: int = 20):
@@ -652,5 +667,5 @@ def get_new_followers(screen_name: str, count: int = 20) -> List[dict]:
     try:
         return _run_async(_get_new_followers_twikit(screen_name, count))
     except Exception as e:
-        print(f"[FOLLOWERS] failed: {e}")
+        logger.error(f"[FOLLOWERS] failed: {e}")
         return []

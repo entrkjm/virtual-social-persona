@@ -4,6 +4,7 @@ Mentioned Scenario
 
 우선순위 2 - 직접적인 호출이므로 확인 필요
 """
+import logging
 from typing import Optional, Dict, Any
 
 from ..base import BaseScenario, ScenarioResult, ScenarioContext
@@ -11,6 +12,8 @@ from agent.memory.database import MemoryDatabase
 from agent.platforms.twitter.api.social import NotificationData
 from agent.platforms.twitter.api import social as twitter_api
 from ...judgment import EngagementJudge, ReplyGenerator
+
+logger = logging.getLogger("agent")
 
 
 class MentionedScenario(BaseScenario):
@@ -30,12 +33,20 @@ class MentionedScenario(BaseScenario):
 
     def execute(self, data: NotificationData) -> Optional[ScenarioResult]:
         """시나리오 실행"""
+        logger.info(f"[Scenario:Mentioned] Starting for @{data.get('from_user')}")
+        
         context = self._gather_context(data)
         if not context:
+            logger.warning("[Scenario:Mentioned] Failed to gather context")
             return None
 
+        logger.debug(f"[Scenario:Mentioned] Context: tweet_id={context.post_id}, person_tier={context.person.tier if context.person else 'N/A'}")
+
         decision = self._judge(context)
+        logger.info(f"[Scenario:Mentioned] Judge decision: action={decision.get('action')}, confidence={decision.get('confidence')}")
+        
         result = self._execute_action(context, decision)
+        logger.info(f"[Scenario:Mentioned] Result: success={result.success if result else False}, action={result.action if result else 'none'}")
 
         if result and result.success:
             self._update_memory(context, result)

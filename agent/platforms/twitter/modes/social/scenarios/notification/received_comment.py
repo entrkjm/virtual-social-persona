@@ -4,6 +4,7 @@ Received Comment Scenario
 
 가장 높은 우선순위 - 내 컨텐츠에 대한 반응이므로 반드시 확인
 """
+import logging
 from typing import Optional, Dict, Any
 
 from ..base import BaseScenario, ScenarioResult, ScenarioContext
@@ -11,6 +12,8 @@ from agent.memory.database import MemoryDatabase
 from agent.platforms.twitter.api.social import NotificationData
 from agent.platforms.twitter.api import social as twitter_api
 from ...judgment import EngagementJudge, ReplyGenerator
+
+logger = logging.getLogger("agent")
 
 
 class ReceivedCommentScenario(BaseScenario):
@@ -35,16 +38,23 @@ class ReceivedCommentScenario(BaseScenario):
         Args:
             data: NotificationData (from_user, tweet_id, tweet_text 등)
         """
+        logger.info(f"[Scenario:ReceivedComment] Starting for @{data.get('from_user')}")
+        
         # 1. 컨텍스트 수집
         context = self._gather_context(data)
         if not context:
+            logger.warning("[Scenario:ReceivedComment] Failed to gather context")
             return None
 
-        # 2. 판단 (TODO: LLM 연동)
+        logger.debug(f"[Scenario:ReceivedComment] Context: tweet_id={context.post_id}, person_tier={context.person.tier if context.person else 'N/A'}")
+
+        # 2. 판단
         decision = self._judge(context)
+        logger.info(f"[Scenario:ReceivedComment] Judge decision: action={decision.get('action')}, confidence={decision.get('confidence')}, reason={decision.get('reason')}")
 
         # 3. 실행
         result = self._execute_action(context, decision)
+        logger.info(f"[Scenario:ReceivedComment] Result: success={result.success if result else False}, action={result.action if result else 'none'}")
 
         # 4. 메모리 업데이트
         if result and result.success:
@@ -104,10 +114,13 @@ class ReceivedCommentScenario(BaseScenario):
         tweet_id = context.post_id
 
         if action == 'skip':
+            logger.debug("[Scenario:ReceivedComment] Action: skip")
             return ScenarioResult(success=True, action='skip')
 
         if action == 'like':
+            logger.info(f"[Scenario:ReceivedComment] Action: like tweet_id={tweet_id}")
             success = twitter_api.like_tweet(tweet_id)
+            logger.info(f"[Scenario:ReceivedComment] Like result: {success}")
             return ScenarioResult(
                 success=success,
                 action='like',
@@ -115,6 +128,7 @@ class ReceivedCommentScenario(BaseScenario):
             )
 
         if action == 'reply':
+            logger.info(f"[Scenario:ReceivedComment] Action: reply (type={decision.get('reply_type', 'normal')})")
             reply_content = self.reply_gen.generate(
                 post_text=context.post_text or "",
                 person=context.person,
@@ -123,10 +137,13 @@ class ReceivedCommentScenario(BaseScenario):
             )
 
             if not reply_content:
+                logger.warning("[Scenario:ReceivedComment] Reply generation failed")
                 return ScenarioResult(success=False, action='reply', details={'error': 'empty reply'})
 
+            logger.info(f"[Scenario:ReceivedComment] Reply content: {reply_content[:50]}...")
             result = twitter_api.reply_to_tweet(tweet_id, reply_content)
             success = result is not None
+            logger.info(f"[Scenario:ReceivedComment] Reply result: {success}")
 
             return ScenarioResult(
                 success=success,

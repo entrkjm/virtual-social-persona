@@ -4,6 +4,7 @@ Quoted Scenario
 
 우선순위 3 - 내 컨텐츠 확산이므로 확인
 """
+import logging
 from typing import Optional, Dict, Any
 
 from ..base import BaseScenario, ScenarioResult, ScenarioContext
@@ -11,6 +12,8 @@ from agent.memory.database import MemoryDatabase
 from agent.platforms.twitter.api.social import NotificationData
 from agent.platforms.twitter.api import social as twitter_api
 from ...judgment import EngagementJudge, ReplyGenerator
+
+logger = logging.getLogger("agent")
 
 
 class QuotedScenario(BaseScenario):
@@ -29,12 +32,18 @@ class QuotedScenario(BaseScenario):
 
     def execute(self, data: NotificationData) -> Optional[ScenarioResult]:
         """시나리오 실행"""
+        logger.info(f"[Scenario:Quoted] Starting for @{data.get('from_user')}")
+        
         context = self._gather_context(data)
         if not context:
+            logger.warning("[Scenario:Quoted] Failed to gather context")
             return None
 
         decision = self._judge(context)
+        logger.info(f"[Scenario:Quoted] Judge decision: action={decision.get('action')}, confidence={decision.get('confidence')}")
+        
         result = self._execute_action(context, decision)
+        logger.info(f"[Scenario:Quoted] Result: success={result.success if result else False}, action={result.action if result else 'none'}")
 
         if result and result.success:
             self._update_memory(context, result)

@@ -5,6 +5,7 @@ New Follower Scenario
 우선순위 4 - 팔로우백 판단
 기존 FollowEngine 로직 통합 (점수 기반 + 지연 큐)
 """
+import logging
 from typing import Optional, Dict, Any
 
 from ..base import BaseScenario, ScenarioResult, ScenarioContext
@@ -12,6 +13,8 @@ from agent.memory.database import MemoryDatabase
 from agent.platforms.twitter.api.social import NotificationData
 from agent.platforms.twitter.api import social as twitter_api
 from ...follow_engine import FollowEngine, FollowDecision
+
+logger = logging.getLogger("agent")
 
 
 class NewFollowerScenario(BaseScenario):
@@ -30,12 +33,18 @@ class NewFollowerScenario(BaseScenario):
 
     def execute(self, data: NotificationData) -> Optional[ScenarioResult]:
         """시나리오 실행"""
+        logger.info(f"[Scenario:NewFollower] Starting for @{data.get('from_user')}")
+        
         context = self._gather_context(data)
         if not context:
+            logger.warning("[Scenario:NewFollower] Failed to gather context")
             return None
 
         decision = self._judge(context)
+        logger.info(f"[Scenario:NewFollower] Decision: action={decision.get('action')}, score={decision.get('score')}, reason={decision.get('reason')}")
+        
         result = self._execute_action(context, decision)
+        logger.info(f"[Scenario:NewFollower] Result: success={result.success if result else False}, action={result.action if result else 'none'}")
 
         if result and result.success:
             self._update_memory(context, result)

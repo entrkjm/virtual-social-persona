@@ -1,5 +1,5 @@
 """
-Social Mode v2 Engine
+Social Mode Engine
 통합 진입점 - NotificationJourney와 FeedJourney 오케스트레이션
 
 기존 SocialAgent와 통합하여 사용
@@ -7,6 +7,7 @@ Social Mode v2 Engine
 import random
 from typing import Optional, Dict, Any, List
 
+from agent.core.logger import logger
 from agent.memory.database import MemoryDatabase
 from agent.memory.factory import MemoryFactory
 
@@ -15,12 +16,12 @@ from .journeys.feed import FeedJourney
 from .journeys.base import JourneyResult
 
 
-class SocialEngineV2:
+class SocialEngine:
     """
-    Social Mode v2 통합 엔진
+    Social Mode 통합 엔진
 
     Usage:
-        engine = SocialEngineV2(persona_id='chef_choi', persona_config=config)
+        engine = SocialEngine(persona_id='chef_choi', persona_config=config)
         result = engine.run_notification_journey()  # 알림 우선
         result = engine.run_feed_journey(posts)      # 피드 탐색
     """
@@ -83,10 +84,16 @@ class SocialEngineV2:
                 process_limit=process_limit
             )
             if result:
-                print(f"[SocialV2] Notification: {result.scenario_executed} -> {result.action_taken}")
+                logger.info(
+                    f"[Social] Notification: {result.scenario_executed} -> {result.action_taken}"
+                )
             return result
         except Exception as e:
-            print(f"[SocialV2] Notification journey failed: {e}")
+            error_str = str(e).lower()
+            # 226/401/403/authorization 에러는 상위로 전파
+            if any(code in error_str for code in ['226', '401', '403', 'authorization', 'automated']):
+                raise
+            logger.error(f"[Social] Notification journey failed: {e}")
             return None
 
     def run_feed_journey(
@@ -106,10 +113,16 @@ class SocialEngineV2:
                 process_limit=process_limit
             )
             if result:
-                print(f"[SocialV2] Feed: {result.scenario_executed} -> {result.action_taken}")
+                logger.info(
+                    f"[Social] Feed: {result.scenario_executed} -> {result.action_taken}"
+                )
             return result
         except Exception as e:
-            print(f"[SocialV2] Feed journey failed: {e}")
+            error_str = str(e).lower()
+            # 226/401/403/authorization 에러는 상위로 전파
+            if any(code in error_str for code in ['226', '401', '403', 'authorization', 'automated']):
+                raise
+            logger.error(f"[Social] Feed journey failed: {e}")
             return None
 
     def step(
@@ -126,21 +139,25 @@ class SocialEngineV2:
         """
         activity_weight = self._get_notification_weight()
         final_weight = activity_weight if activity_weight is not None else notification_weight
+        roll = random.random()
 
         # 알림 우선 (notification_weight 확률)
-        if random.random() < final_weight:
+        if roll < final_weight:
+            logger.info(f"[Social] Journey: notification (roll={roll:.2f} < {final_weight:.2f})")
             result = self.run_notification_journey()
             if result and result.success:
                 return result
 
         # 피드 탐색
         if posts:
+            logger.info(f"[Social] Journey: feed (roll={roll:.2f} >= {final_weight:.2f})")
             result = self.run_feed_journey(posts)
             if result and result.success:
                 return result
 
         # 둘 다 실패 시 알림 재시도 (아직 안 했다면)
-        if random.random() >= final_weight:
+        if roll >= final_weight:
+            logger.info(f"[Social] Journey: notification (fallback)")
             return self.run_notification_journey()
 
         return None

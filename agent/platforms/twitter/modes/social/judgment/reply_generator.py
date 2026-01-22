@@ -4,10 +4,13 @@ LLM 기반 답글 생성
 
 EngagementJudge가 reply로 결정한 후 호출
 """
+import logging
 from typing import Dict, Any, Optional
 
 from core.llm import llm_client
 from agent.memory.database import PersonMemory
+
+logger = logging.getLogger("agent")
 
 
 class ReplyGenerator:
@@ -58,13 +61,17 @@ class ReplyGenerator:
             reply_type: 'short', 'normal', 'long'
             context: 추가 컨텍스트
         """
+        logger.debug(f"[ReplyGen] Generating: type={reply_type}, person={person.screen_name if person else 'N/A'}")
         prompt = self._build_prompt(post_text, person, reply_type, context)
 
         try:
+            logger.debug("[ReplyGen] Calling LLM...")
             response = llm_client.generate(prompt, system_prompt=self.system_prompt)
-            return self._clean_response(response)
+            cleaned = self._clean_response(response)
+            logger.info(f"[ReplyGen] Generated ({len(cleaned)} chars): {cleaned[:50]}...")
+            return cleaned
         except Exception as e:
-            print(f"[ReplyGenerator] LLM failed: {e}")
+            logger.error(f"[ReplyGen] LLM failed: {e}")
             return ""
 
     def _build_prompt(

@@ -5,12 +5,15 @@ Feed Journey
 HYBRID v1: Rule-based classification → priority selection → LLM judgment on 1 post
 TODO(v2): Per-post individual LLM judgment
 """
+import logging
 import random
 from typing import Optional, List, Tuple, Dict, Any
 from dataclasses import dataclass
 
 from .base import BaseJourney, JourneyResult
 from agent.memory.database import MemoryDatabase, PersonMemory
+
+logger = logging.getLogger("agent")
 
 from ..scenarios.feed.familiar_person import FamiliarPersonScenario
 from ..scenarios.feed.interesting_post import InterestingPostScenario
@@ -81,16 +84,22 @@ class FeedJourney(BaseJourney):
             process_limit: 처리할 포스트 수 (기본 1개)
         """
         if not posts:
+            logger.info("[Feed] No posts provided")
             return None
+
+        logger.info(f"[Feed] Processing {len(posts)} posts")
 
         # HYBRID v1: Rule-based classification (no LLM)
         classified = self._quick_classify_hybrid(posts)
+        logger.info(f"[Feed] Classified: familiar={len(classified.familiar)}, interesting={len(classified.interesting)}, others={len(classified.others)}")
 
         # Priority-based selection
         selected, scenario_type = self._select_one_hybrid(classified)
         if not selected:
+            logger.info("[Feed] No post selected (all filtered)")
             return None
 
+        logger.info(f"[Feed] Selected: {scenario_type} @{selected.get('user')}")
         return self._run_scenario(selected, scenario_type)
 
     def _quick_classify_hybrid(self, posts: List[Dict]) -> ClassifiedPosts:
@@ -200,10 +209,14 @@ class FeedJourney(BaseJourney):
         """시나리오 실행"""
         scenario = self.scenarios.get(scenario_type)
         if not scenario:
+            logger.warning(f"[Feed] Unknown scenario: {scenario_type}")
             return None
 
         try:
+            logger.info(f"[Feed] Executing {scenario_type} on @{post.get('user')}")
             result = scenario.execute(post)
+            if result:
+                logger.info(f"[Feed] Result: success={result.success}, action={result.action}")
             return JourneyResult(
                 success=result.success if result else False,
                 scenario_executed=scenario_type,
@@ -212,5 +225,10 @@ class FeedJourney(BaseJourney):
                 details=result.details if result else None
             )
         except Exception as e:
-            print(f"[FeedJourney] Scenario {scenario_type} failed: {e}")
+            error_str = str(e).lower()
+            # 226/401/403/authorization 에러는 상위로 전파 (쿨다운 처리 필요)
+            if any(code in error_str for code in ['226', '401', '403', 'authorization', 'automated']):
+                logger.error(f"[Feed] Auth error, propagating: {e}")
+                raise
+            logger.error(f"[Feed] Scenario {scenario_type} failed: {e}")
             return None

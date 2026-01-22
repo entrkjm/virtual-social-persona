@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from config.settings import settings
 from agent.persona.persona_loader import active_persona_name, active_persona
 from agent.core.mode_manager import mode_manager, AgentMode
+from agent.core.logger import logger
 
 
 @dataclass
@@ -114,14 +115,14 @@ class HumanLikeController:
 
         if delay_range:
             delay = random.uniform(delay_range[0], delay_range[1])
-            print(f"[HUMAN-LIKE] {action_type} 후 {delay:.1f}초 대기...")
+            logger.info(f"[HUMAN-LIKE] {action_type} 후 {delay:.1f}초 대기...")
             time.sleep(delay)
 
     def apply_between_actions_delay(self):
         delays = self._get_delay_config()
         delay_range = delays.get('between_steps', [3, 10])
         delay = random.uniform(delay_range[0], delay_range[1])
-        print(f"[HUMAN-LIKE] 액션 간 {delay:.1f}초 대기...")
+        logger.info(f"[HUMAN-LIKE] 액션 간 {delay:.1f}초 대기...")
         time.sleep(delay)
 
     def record_action(self, action_type: str):
@@ -145,13 +146,15 @@ class HumanLikeController:
             reduce_prob = cfg.get('reduce_probability', 0.5)
             self.state.error_226_until = now + timedelta(minutes=pause_minutes)
             self.state.probability_modifier *= reduce_prob
-            print(f"[HUMAN-LIKE] 226 에러 감지. {pause_minutes}분 정지, 확률 {reduce_prob}배 감소")
+            logger.warning(
+                f"[HUMAN-LIKE] 226 에러 감지. {pause_minutes}분 정지, 확률 {reduce_prob}배 감소"
+            )
 
         elif error_code == 404:
             cfg = error_cfg.get('on_404', {})
             pause_minutes = cfg.get('pause_minutes', 5)
             self.state.error_404_until = now + timedelta(minutes=pause_minutes)
-            print(f"[HUMAN-LIKE] 404 에러 감지. {pause_minutes}분 정지")
+            logger.warning(f"[HUMAN-LIKE] 404 에러 감지. {pause_minutes}분 정지")
 
     def can_take_action(self) -> Tuple[bool, Optional[str]]:
         if self.is_in_warmup():
@@ -488,7 +491,9 @@ class BehaviorEngine:
         final_score = min(max(score, 0.0), 1.0)
         
         if mode_manager.mode == AgentMode.AGGRESSIVE or final_score > 0.5:
-             print(f"[SCORE] Base:{base_prob:.2f} + {' '.join(log_factors)} = {final_score:.2f}")
+            logger.debug(
+                f"[SCORE] Base:{base_prob:.2f} + {' '.join(log_factors)} = {final_score:.2f}"
+            )
 
         return final_score
 
@@ -529,7 +534,10 @@ class BehaviorEngine:
 
         from agent.core.mode_manager import AgentMode, mode_manager
         if mode_manager.mode == AgentMode.AGGRESSIVE:
-             print(f"[DECIDE] Score:{interaction_score:.2f} -> Like:{like_prob:.2f} Repost:{repost_prob:.2f} Comment:{comment_prob:.2f}")
+            logger.debug(
+                f"[DECIDE] Score:{interaction_score:.2f} -> "
+                f"Like:{like_prob:.2f} Repost:{repost_prob:.2f} Comment:{comment_prob:.2f}"
+            )
 
         return {
             'like': random.random() < like_prob,

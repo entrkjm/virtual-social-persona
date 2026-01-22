@@ -4,12 +4,15 @@ Familiar Person Scenario
 
 HYBRID v1에서 FeedJourney가 rule-based로 선택한 후 실행됨
 """
+import logging
 from typing import Optional, Dict, Any
 
 from ..base import BaseScenario, ScenarioResult, ScenarioContext
 from agent.memory.database import MemoryDatabase, PersonMemory
 from agent.platforms.twitter.api import social as twitter_api
 from ...judgment import EngagementJudge, ReplyGenerator
+
+logger = logging.getLogger("agent")
 
 
 class FamiliarPersonScenario(BaseScenario):
@@ -32,12 +35,20 @@ class FamiliarPersonScenario(BaseScenario):
         Args:
             data: 포스트 데이터 (FeedJourney에서 전달)
         """
+        logger.info(f"[Scenario:FamiliarPerson] Starting for @{data.get('user')}")
+        
         context = self._gather_context(data)
         if not context:
+            logger.warning("[Scenario:FamiliarPerson] Failed to gather context")
             return None
 
+        logger.debug(f"[Scenario:FamiliarPerson] Context: person_tier={context.person.tier if context.person else 'N/A'}")
+
         decision = self._judge(context)
+        logger.info(f"[Scenario:FamiliarPerson] Judge decision: action={decision.get('action')}, confidence={decision.get('confidence')}")
+        
         result = self._execute_action(context, decision)
+        logger.info(f"[Scenario:FamiliarPerson] Result: success={result.success if result else False}, action={result.action if result else 'none'}")
 
         if result and result.success:
             self._update_memory(context, result)

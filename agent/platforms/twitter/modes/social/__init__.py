@@ -1,12 +1,11 @@
 """
-Social Mode v2
+Social Mode
 Notification-centric, scenario-based social interaction
 
-HYBRID v1: Rule-based classification → 1 post selection → LLM judgment
-TODO(v2): Per-post individual LLM judgment
+Rule-based classification → 1 post selection → LLM judgment
 """
-from .engine import SocialEngineV2
+from .engine import SocialEngine
 from .journeys.base import JourneyResult
 from .scenarios.base import ScenarioResult
 
-__all__ = ['SocialEngineV2', 'JourneyResult', 'ScenarioResult']
+__all__ = ['SocialEngine', 'JourneyResult', 'ScenarioResult']
