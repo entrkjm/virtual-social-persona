@@ -445,7 +445,7 @@ def _classify_notification_type(notif) -> str:
     elif any(kw in msg for kw in ["followed", "follow", "팔로우", "팔로잉"]):
         return "follow"
     else:
-        logger.debug(f"[NOTIF] Unknown type, message: {msg[:100]}")
+        logger.info(f"[NOTIF] Unknown type: {msg[:50]}")
         return "unknown"
 
 
