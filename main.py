@@ -187,10 +187,6 @@ async def run_standalone_async():
     logger.info("Loading Agent State...")
     social_agent.get_state_fn(function_result=None, current_state={})
 
-    # Twitter 클라이언트 초기화
-    from agent.platforms.twitter.api import social as twitter_api
-    twitter_api.ensure_client()
-
     logger.info("Starting session-based loop")
 
     session_count = 0
@@ -300,6 +296,10 @@ async def run_standalone_async():
 def run_standalone():
     """Standalone 모드 진입점"""
     try:
+        # Twitter 클라이언트 초기화 (async 루프 전에 동기적으로)
+        from agent.platforms.twitter.api import social as twitter_api
+        twitter_api.ensure_client()
+
         asyncio.run(run_standalone_async())
     except KeyboardInterrupt:
         logger.info("\n[STOP] Shutdown via KeyboardInterrupt")

@@ -11,16 +11,25 @@ from agent.core.logger import logger
 
 
 def _run_async(coro):
-    """Run async coroutine with proper event loop handling to avoid 'Event loop is closed' errors"""
+    """Run async coroutine with proper event loop handling"""
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
+        loop = asyncio.get_running_loop()
+        # 이미 running loop가 있으면 nest_asyncio 스타일로 처리
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            future = pool.submit(asyncio.run, coro)
+            return future.result()
+    except RuntimeError:
+        # running loop 없음 - 일반적인 경우
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_closed():
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+        except RuntimeError:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-    return loop.run_until_complete(coro)
+        return loop.run_until_complete(coro)
 
 
 class TweetEngagement(TypedDict, total=False):
