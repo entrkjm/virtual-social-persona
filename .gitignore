@@ -43,3 +43,4 @@ twitter_cookies_*.json
 
 scripts/refresh_session.py
 ops/
+virtual-social-persona-ops/
